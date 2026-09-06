@@ -160,4 +160,40 @@ else
   log_info "Phase 4 already completed, skipping"
 fi
 
-log_info "Phase 4 complete. Phase 5 (audit and final report) is not implemented yet."
+log_info "Phase 4 complete."
+
+if [ "$(state_get PHASE5_DONE)" != "1" ]; then
+  # shellcheck source=components/install_rootfs.sh
+  source "$SCRIPT_DIR/components/install_rootfs.sh"
+  # shellcheck source=components/create_user.sh
+  source "$SCRIPT_DIR/components/create_user.sh"
+  # shellcheck source=components/setup_launcher.sh
+  source "$SCRIPT_DIR/components/setup_launcher.sh"
+  # shellcheck source=lib/container_paths.sh
+  source "$SCRIPT_DIR/lib/container_paths.sh"
+  # shellcheck source=lib/idempotent_append.sh
+  source "$SCRIPT_DIR/lib/idempotent_append.sh"
+  # shellcheck source=components/dev_toolchain.sh
+  source "$SCRIPT_DIR/components/dev_toolchain.sh"
+  # shellcheck source=components/nerdfonts.sh
+  source "$SCRIPT_DIR/components/nerdfonts.sh"
+  # shellcheck source=components/shell_setup.sh
+  source "$SCRIPT_DIR/components/shell_setup.sh"
+  # shellcheck source=components/lazyvim.sh
+  source "$SCRIPT_DIR/components/lazyvim.sh"
+  # shellcheck source=components/telecom.sh
+  source "$SCRIPT_DIR/components/telecom.sh"
+  # shellcheck source=lib/generate_report.sh
+  source "$SCRIPT_DIR/lib/generate_report.sh"
+  # shellcheck source=lib/cleanup.sh
+  source "$SCRIPT_DIR/lib/cleanup.sh"
+  # shellcheck source=lib/verify_functional.sh
+  source "$SCRIPT_DIR/lib/verify_functional.sh"
+
+  phase5_run
+  state_set PHASE5_DONE 1
+else
+  log_info "Phase 5 already completed, skipping"
+fi
+
+log_info "termux-dev-env: installation complete."
