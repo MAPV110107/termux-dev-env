@@ -196,4 +196,19 @@ else
   log_info "Phase 5 already completed, skipping"
 fi
 
-log_info "termux-dev-env: installation complete."
+log_info "Phase 5 complete."
+
+if [ "$(state_get PHASE6_DONE)" != "1" ]; then
+  # shellcheck source=components/install_maintenance.sh
+  source "$SCRIPT_DIR/components/install_maintenance.sh"
+  phase6_install_maintenance_run
+  if [ "$TDE_DRY_RUN" = "1" ] || phase6_maintenance_ok; then
+    state_set PHASE6_DONE 1
+  else
+    log_fatal "Maintenance command install did not pass its post-condition check"
+  fi
+else
+  log_info "Phase 6 already completed, skipping"
+fi
+
+log_info "termux-dev-env: installation complete. Maintenance commands available: archhealth, archdiag, archupdate, archreset, archreapply."

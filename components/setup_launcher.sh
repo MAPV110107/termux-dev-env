@@ -13,6 +13,7 @@ phase3_write_launcher_config() {
   username="$(state_get ARCH_USERNAME)"
   kv_set "$TDE_LAUNCHER_CONFIG" ARCH_USERNAME "$username"
   kv_set "$TDE_LAUNCHER_CONFIG" ARCH_DISTRO_ALIAS "$TDE_DISTRO_NAME"
+  kv_set "$TDE_LAUNCHER_CONFIG" TDE_ROOT "$TDE_ROOT"
 }
 
 # Idempotent: safe to re-run without duplicating the block in .zshrc.
