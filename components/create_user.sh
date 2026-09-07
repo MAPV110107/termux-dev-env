@@ -19,8 +19,7 @@ _username_is_valid() {
 phase3_prompt_username() {
   local input
   while true; do
-    read -r -p "Arch Linux username [user]: " input
-    input="${input:-user}"
+    input="$(_prompt "Arch Linux username [user]: " "user")"
     if _username_is_valid "$input"; then
       echo "$input"
       return 0

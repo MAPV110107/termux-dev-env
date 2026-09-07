@@ -14,6 +14,31 @@ phase4_ensure_neovim() {
     log_fatal "Could not install neovim/ripgrep/fd/lazygit"
 }
 
+# The on-demand lint keymap (<leader>lc) runs tsc/eslint — neither exists
+# just from installing nodejs/npm, they're separate global packages.
+# Symlinked into /usr/local/bin (not exported via .zshrc) because neither
+# Neovim's :! shell-outs nor a non-interactive `proot-distro login -- cmd`
+# reliably source .zshrc — /usr/local/bin is on PATH unconditionally.
+phase4_setup_npm_global() {
+  local username npm_global
+  username="$(state_get ARCH_USERNAME)"
+  npm_global="/home/$username/.npm-global"
+
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    npm config set prefix "$npm_global" || \
+    log_fatal "Could not configure npm global prefix"
+
+  log_info "Installing typescript and eslint globally (needed for <leader>lc)"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    npm install -g typescript eslint || \
+    log_warn "Global npm install of typescript/eslint failed — <leader>lc will not work until fixed manually"
+
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c "
+    ln -sf $npm_global/bin/tsc /usr/local/bin/tsc 2>/dev/null
+    ln -sf $npm_global/bin/eslint /usr/local/bin/eslint 2>/dev/null
+  "
+}
+
 phase4_clone_lazyvim_starter() {
   local username nvim_dir
   username="$(state_get ARCH_USERNAME)"
@@ -161,11 +186,12 @@ phase4_lazyvim_run() {
   log_info "=== Phase 4: LazyVim install and preconfiguration ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install neovim+tools, clone LazyVim starter, remove example.lua, disable LSP/Mason/neo-tree, add oil.nvim + on-demand lint, sync plugins (blocking), verify via lazy stats and treesitter cc check"
+    log_info "[dry-run] would install neovim+tools, configure npm global prefix + typescript/eslint, clone LazyVim starter, remove example.lua, disable LSP/Mason/neo-tree, add oil.nvim + on-demand lint, sync plugins (blocking), verify via lazy stats, treesitter cc check, and tsc/eslint reachability"
     return 0
   fi
 
   phase4_ensure_neovim
+  phase4_setup_npm_global
   phase4_clone_lazyvim_starter
   phase4_write_options_overrides
   phase4_write_keymaps
@@ -186,5 +212,6 @@ phase4_lazyvim_ok() {
   [ -f "$nvim_dir/lua/config/options.lua" ] || return 1
   loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     nvim --headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>/dev/null | tail -n1)"
-  [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ]
+  [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ] || return 1
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'command -v tsc >/dev/null 2>&1 && command -v eslint >/dev/null 2>&1'
 }

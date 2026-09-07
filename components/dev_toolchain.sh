@@ -18,8 +18,8 @@ phase4_sync_and_install_toolchain() {
 phase4_prompt_git_identity() {
   local username git_name git_email
   username="$(state_get ARCH_USERNAME)"
-  read -r -p "Git user.name for commits: " git_name
-  read -r -p "Git user.email for commits: " git_email
+  git_name="$(_prompt "Git user.name for commits: " "")"
+  git_email="$(_prompt "Git user.email for commits: " "")"
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.name "$git_name"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.email "$git_email"

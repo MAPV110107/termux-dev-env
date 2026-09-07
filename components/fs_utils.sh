@@ -14,7 +14,7 @@ phase4_install_fs_tools() {
 
 phase4_prompt_ssh_server() {
   local answer
-  read -r -p "Generate SSH host keys for remote access (sshd)? [y/N]: " answer
+  answer="$(_prompt "Generate SSH host keys for remote access (sshd)? [y/N]: " "N")"
   if [ "$answer" = "y" ] || [ "$answer" = "Y" ]; then
     proot-distro login "$TDE_DISTRO_NAME" -- ssh-keygen -A || log_warn "Could not generate SSH host keys"
     log_info "SSH host keys generated — start the server manually with 'sudo /usr/bin/sshd' when you want remote access (no init system to auto-start it)"

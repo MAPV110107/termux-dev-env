@@ -17,6 +17,21 @@ _run() {
   fi
 }
 
+# Centralized prompt: returns the default immediately under --dry-run
+# without touching the terminal. Every interactive read in phases 3/4
+# goes through this, so a future refactor that calls a prompt function
+# directly (bypassing a *_run guard) still can't make dry-run interactive.
+_prompt() {
+  local prompt_text="$1" default_value="${2:-}"
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    echo "$default_value"
+    return 0
+  fi
+  local input
+  read -r -p "$prompt_text" input
+  echo "${input:-$default_value}"
+}
+
 phase1_check_termux() {
   if [ -z "${PREFIX:-}" ] || [ ! -d "$PREFIX" ]; then
     log_fatal "Not running inside Termux (\$PREFIX unset or missing)"
