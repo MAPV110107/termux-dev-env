@@ -71,7 +71,10 @@ phase4_write_options_overrides() {
   idempotent_append "$nvim_dir/lua/config/options.lua" "options" '
 vim.opt.emoji = false
 vim.opt.ambiwidth = "single"
-vim.diagnostic.config({ virtual_text = false })' "--"
+vim.diagnostic.config({ virtual_text = false })
+-- Explicit, not inherited from $SHELL: the Ctrl-/ terminal and any :!
+-- shell-out should use zsh regardless of what launched Neovim.
+vim.opt.shell = "/usr/bin/zsh"' "--"
 }
 
 phase4_write_keymaps() {
@@ -149,6 +152,19 @@ phase4_sync_plugins() {
     log_fatal "Lazy plugin sync failed"
 }
 
+# Pre-installs parsers instead of leaving them to LazyVim's on-demand
+# auto-install — otherwise the first file of each type opened pays a
+# one-time compile delay. Non-fatal: auto-install still covers it if this
+# fails, just with that delay.
+phase4_install_treesitter_parsers() {
+  local username
+  username="$(state_get ARCH_USERNAME)"
+  log_info "Pre-installing treesitter parsers (web dev + git + markdown + config)"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    nvim --headless -c "TSInstallSync bash lua vim vimdoc query javascript typescript tsx json jsonc html css scss markdown markdown_inline yaml toml gitcommit gitignore diff regex" -c "qa" || \
+    log_warn "Some treesitter parsers failed to pre-install — they will still auto-install on first use of that filetype"
+}
+
 phase4_verify_lazy() {
   local username loaded
   username="$(state_get ARCH_USERNAME)"
@@ -186,7 +202,7 @@ phase4_lazyvim_run() {
   log_info "=== Phase 4: LazyVim install and preconfiguration ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install neovim+tools, configure npm global prefix + typescript/eslint, clone LazyVim starter, remove example.lua, disable LSP/Mason/neo-tree, add oil.nvim + on-demand lint, sync plugins (blocking), verify via lazy stats, treesitter cc check, and tsc/eslint reachability"
+    log_info "[dry-run] would install neovim+tools, configure npm global prefix + typescript/eslint, clone LazyVim starter, remove example.lua, disable LSP/Mason/neo-tree, add oil.nvim + on-demand lint, sync plugins (blocking), pre-install treesitter parsers, verify via lazy stats, treesitter cc check, and tsc/eslint reachability"
     return 0
   fi
 
@@ -198,6 +214,7 @@ phase4_lazyvim_run() {
   phase4_write_autocmds_note
   phase4_write_plugin_overrides
   phase4_sync_plugins
+  phase4_install_treesitter_parsers
   phase4_verify_lazy
   phase4_verify_treesitter_cc
   phase4_verify_editor_tools

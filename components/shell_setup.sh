@@ -52,6 +52,16 @@ phase4_enable_autosuggestions_plugin() {
   sed -i 's/^plugins=(\(.*\))/plugins=(\1 zsh-autosuggestions)/' "$zshrc"
 }
 
+# agnoster ships with oh-my-zsh itself, no extra download — matches the
+# theme now set for Termux's own shell too, for a consistent look on both
+# sides of the launcher.
+phase4_set_zsh_theme() {
+  local username zshrc
+  username="$(state_get ARCH_USERNAME)"
+  zshrc="$(container_home "$username")/.zshrc"
+  sed -i 's/^ZSH_THEME=.*/ZSH_THEME="agnoster"/' "$zshrc"
+}
+
 phase4_set_default_shell() {
   local username
   username="$(state_get ARCH_USERNAME)"
@@ -75,7 +85,7 @@ phase4_shell_setup_run() {
   log_info "=== Phase 4: shell setup (zsh + oh-my-zsh) ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install zsh+tmux, oh-my-zsh, zsh-autosuggestions, set zsh as default shell, append PROOT_ACTIVE + tmux auto-attach"
+    log_info "[dry-run] would install zsh+tmux, oh-my-zsh, zsh-autosuggestions, agnoster theme, set zsh as default shell, append PROOT_ACTIVE + tmux auto-attach"
     return 0
   fi
 
@@ -83,6 +93,7 @@ phase4_shell_setup_run() {
   phase4_install_ohmyzsh
   phase4_install_zsh_autosuggestions
   phase4_enable_autosuggestions_plugin
+  phase4_set_zsh_theme
   phase4_set_default_shell
   phase4_write_zshrc_extras
   log_info "Shell configured"
@@ -90,8 +101,10 @@ phase4_shell_setup_run() {
 
 # Post-condition, checked by core.sh before marking PHASE4_SHELL.
 phase4_shell_ok() {
-  local username shell
+  local username shell zshrc
   username="$(state_get ARCH_USERNAME)"
+  zshrc="$(container_home "$username")/.zshrc"
   shell="$(proot-distro login "$TDE_DISTRO_NAME" -- getent passwd "$username" 2>/dev/null | cut -d: -f7)"
-  [ "$shell" = "/usr/bin/zsh" ]
+  [ "$shell" = "/usr/bin/zsh" ] || return 1
+  grep -q 'ZSH_THEME="agnoster"' "$zshrc" 2>/dev/null
 }
