@@ -22,7 +22,11 @@ phase3_install_termux_ohmyzsh() {
     log_info "oh-my-zsh already installed in Termux, skipping"
     return 0
   fi
-  RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c "$(curl -fsSL "$TDE_OHMYZSH_INSTALL_URL")" || \
+  local install_script
+  install_script="$(curl -fsSL "$TDE_OHMYZSH_INSTALL_URL")" || \
+    log_fatal "Could not download the oh-my-zsh installer for Termux"
+  [ -n "$install_script" ] || log_fatal "oh-my-zsh installer download for Termux returned empty content"
+  RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c "$install_script" || \
     log_fatal "oh-my-zsh install failed in Termux"
 }
 

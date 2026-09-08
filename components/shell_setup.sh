@@ -23,9 +23,13 @@ phase4_install_ohmyzsh() {
     return 0
   fi
 
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- bash -c \
-    "RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c \"\$(curl -fsSL $TDE_OHMYZSH_INSTALL_URL)\"" || \
-    log_fatal "oh-my-zsh install failed"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" \
+    --env OHMYZSH_URL="$TDE_OHMYZSH_INSTALL_URL" -- bash -c '
+    set -e
+    install_script="$(curl -fsSL "$OHMYZSH_URL")"
+    [ -n "$install_script" ]
+    RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c "$install_script"
+  ' || log_fatal "oh-my-zsh install failed"
 }
 
 phase4_install_zsh_autosuggestions() {

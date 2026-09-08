@@ -45,10 +45,17 @@ phase3_create_user_run() {
   local username
   username="$(phase3_prompt_username)"
   state_set ARCH_USERNAME "$username"
-  log_info "Creating user '$username' inside $TDE_DISTRO_NAME"
 
-  proot-distro login "$TDE_DISTRO_NAME" -- useradd -m -G wheel -s /bin/bash "$username" || \
-    log_fatal "useradd failed for '$username'"
+  # Idempotent: if a previous run already created the user but failed on a
+  # later step (sudo install, sudoers.d write), a naive retry would call
+  # useradd again on the same name and crash with "user already exists".
+  if proot-distro login "$TDE_DISTRO_NAME" -- id -u "$username" >/dev/null 2>&1; then
+    log_info "User '$username' already exists, skipping useradd"
+  else
+    log_info "Creating user '$username' inside $TDE_DISTRO_NAME"
+    proot-distro login "$TDE_DISTRO_NAME" -- useradd -m -G wheel -s /bin/bash "$username" || \
+      log_fatal "useradd failed for '$username'"
+  fi
 
   phase3_ensure_sudo_installed
 

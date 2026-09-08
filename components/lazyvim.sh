@@ -5,6 +5,12 @@
 [ -n "${TDE_LAZYVIM_LOADED:-}" ] && return 0
 TDE_LAZYVIM_LOADED=1
 
+# LazyVim/starter has no tagged releases — only 'main'. Our overrides
+# (options.lua, plugins/example.lua removal, etc.) depend on its current
+# file layout, so an upstream restructure could break this. Pinning to a
+# specific commit would protect against that, but only after it's been
+# verified on real hardware — pick a known-good SHA here once you have:
+#   TDE_LAZYVIM_STARTER_REF="<commit-sha>"  # then: git clone ... && git checkout "$TDE_LAZYVIM_STARTER_REF"
 TDE_LAZYVIM_STARTER_URL="https://github.com/LazyVim/starter"
 
 phase4_ensure_neovim() {

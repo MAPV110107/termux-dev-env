@@ -19,6 +19,10 @@ source "$SCRIPT_DIR/lib/lock.sh"
 source "$SCRIPT_DIR/lib/kv.sh"
 # shellcheck source=lib/state.sh
 source "$SCRIPT_DIR/lib/state.sh"
+# shellcheck source=lib/container_paths.sh
+source "$SCRIPT_DIR/lib/container_paths.sh"
+# shellcheck source=lib/idempotent_append.sh
+source "$SCRIPT_DIR/lib/idempotent_append.sh"
 
 log_init
 lock_acquire
@@ -91,11 +95,6 @@ state_set PHASE3_DONE 1
 
 log_info "Phase 3 complete."
 
-# shellcheck source=lib/container_paths.sh
-source "$SCRIPT_DIR/lib/container_paths.sh"
-# shellcheck source=lib/idempotent_append.sh
-source "$SCRIPT_DIR/lib/idempotent_append.sh"
-
 if [ "$(state_get PHASE4_TOOLCHAIN)" != "1" ]; then
   # shellcheck source=components/dev_toolchain.sh
   source "$SCRIPT_DIR/components/dev_toolchain.sh"
@@ -161,10 +160,6 @@ if [ "$(state_get PHASE5_DONE)" != "1" ]; then
   source "$SCRIPT_DIR/components/create_user.sh"
   # shellcheck source=components/setup_launcher.sh
   source "$SCRIPT_DIR/components/setup_launcher.sh"
-  # shellcheck source=lib/container_paths.sh
-  source "$SCRIPT_DIR/lib/container_paths.sh"
-  # shellcheck source=lib/idempotent_append.sh
-  source "$SCRIPT_DIR/lib/idempotent_append.sh"
   # shellcheck source=components/dev_toolchain.sh
   source "$SCRIPT_DIR/components/dev_toolchain.sh"
   # shellcheck source=components/nerdfonts.sh
