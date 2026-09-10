@@ -87,9 +87,13 @@ phase1_install_base_packages() {
 phase1_check_proot_version() {
   # proot-distro v5 needs a recent proot; an old one fails later with an
   # unrelated-looking "unknown program 'loader'" error instead of here.
-  local proot_version
-  proot_version="$(proot --version 2>&1 | head -n1 || true)"
-  log_info "proot version: ${proot_version:-unknown}"
+  local proot_version_str major
+  proot_version_str="$(proot --version 2>&1 | head -n1 || true)"
+  log_info "proot version: ${proot_version_str:-unknown}"
+  major="$(echo "$proot_version_str" | grep -oE '[0-9]+' | head -n1 || true)"
+  if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -lt 5 ]; then
+    log_fatal "proot version too old ($proot_version_str) — run 'pkg upgrade proot' first"
+  fi
 }
 
 # Shizuku is optional and never required — without it the user just sets

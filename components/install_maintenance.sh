@@ -11,6 +11,20 @@ _write_shebang() {
   echo "#!$PREFIX/bin/bash" > "$1"
 }
 
+# Copies lib/ + components/ to a stable, fixed location. archhealth/
+# archdiag/archreapply source from here instead of $TDE_ROOT, so moving
+# or deleting the cloned repo doesn't break them. Re-run with
+# --reinstall=6 to re-sync after editing the live repo.
+TDE_SHARE_DIR="$PREFIX/share/termux-dev-env"
+
+phase6_install_shared_copy() {
+  mkdir -p "$TDE_SHARE_DIR"
+  rm -rf "$TDE_SHARE_DIR/lib" "$TDE_SHARE_DIR/components"
+  cp -r "$TDE_ROOT/lib" "$TDE_SHARE_DIR/lib"
+  cp -r "$TDE_ROOT/components" "$TDE_SHARE_DIR/components"
+  cp "$TDE_ROOT/VERSION" "$TDE_SHARE_DIR/VERSION" 2>/dev/null || true
+}
+
 phase6_write_archhealth() {
   local target="$PREFIX/bin/archhealth"
   _write_shebang "$target"
@@ -19,7 +33,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
-cd "$TDE_ROOT" || { echo "termux-dev-env repo not found at $TDE_ROOT — did it move?"; exit 1; }
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
 source lib/logging.sh
@@ -55,7 +69,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
-cd "$TDE_ROOT" || { echo "termux-dev-env repo not found at $TDE_ROOT"; exit 1; }
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
 source lib/logging.sh
@@ -187,7 +201,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
-cd "$TDE_ROOT" || { echo "termux-dev-env repo not found at $TDE_ROOT"; exit 1; }
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
 source lib/logging.sh
@@ -204,26 +218,55 @@ EOF
   chmod +x "$target"
 }
 
+# openssh gives Termux the ssh CLIENT needed to reach back into a computer
+# through an 'adb reverse' tunnel — this is the opposite direction from
+# fs_utils.sh's optional sshd (which lets something connect INTO Arch).
+phase6_install_bridge_deps() {
+  log_info "Installing openssh (ssh client) in Termux for the ADB bridge"
+  retry_with_backoff 3 5 pkg install -y openssh || \
+    log_warn "Could not install openssh in Termux — archbridge will not work until this is retried"
+}
+
+# adb reverse itself must run on the computer (adb is a host-side tool
+# connected to the phone over USB) — this script only handles the phone's
+# side of the workflow: connecting through the tunnel once it exists.
+phase6_write_archbridge() {
+  local target="$PREFIX/bin/archbridge"
+  _write_shebang "$target"
+  cat >> "$target" << 'EOF'
+set -euo pipefail
+PORT="${1:-8022}"
+REMOTE_USER="${2:-root}"
+echo "Connecting to ${REMOTE_USER}@localhost:${PORT}"
+echo "(if this fails: run 'adb devices' then 'adb reverse tcp:${PORT} tcp:22' on the computer first)"
+exec ssh -p "$PORT" "${REMOTE_USER}@localhost"
+EOF
+  chmod +x "$target"
+}
+
 phase6_maintenance_ok() {
   local cmd
-  for cmd in archhealth archdiag archupdate archreset archreapply; do
+  for cmd in archhealth archdiag archupdate archreset archreapply archbridge; do
     [ -x "$PREFIX/bin/$cmd" ] || return 1
   done
-  return 0
+  [ -d "$TDE_SHARE_DIR/lib" ] && [ -d "$TDE_SHARE_DIR/components" ]
 }
 
 phase6_install_maintenance_run() {
   log_info "=== Phase 6: maintenance commands ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install archhealth, archdiag, archupdate, archreset, archreapply to \$PREFIX/bin"
+    log_info "[dry-run] would copy lib/+components/ to \$PREFIX/share/termux-dev-env, install archhealth, archdiag, archupdate, archreset, archreapply, archbridge to \$PREFIX/bin, install openssh in Termux"
     return 0
   fi
 
+  phase6_install_shared_copy
   phase6_write_archhealth
   phase6_write_archdiag
   phase6_write_archupdate
   phase6_write_archreset
   phase6_write_archreapply
-  log_info "Maintenance commands installed: archhealth, archdiag, archupdate, archreset, archreapply"
+  phase6_install_bridge_deps
+  phase6_write_archbridge
+  log_info "Maintenance commands installed: archhealth, archdiag, archupdate, archreset, archreapply, archbridge"
 }

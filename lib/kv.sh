@@ -13,7 +13,7 @@ kv_init() {
 kv_get() {
   local file="$1" key="$2" default="${3:-}"
   local val
-  val="$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2-)"
+  val="$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true)"
   echo "${val:-$default}"
 }
 

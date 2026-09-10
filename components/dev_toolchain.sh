@@ -11,7 +11,7 @@ phase4_sync_and_install_toolchain() {
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
     log_fatal "pacman -Syu failed inside $TDE_DISTRO_NAME"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
-    base-devel git tree-sitter-cli nodejs npm || \
+    base-devel git tree-sitter-cli nodejs npm python-pip nano wget curl || \
     log_fatal "Toolchain package install failed"
 }
 
@@ -48,7 +48,7 @@ phase4_install_paru() {
     git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin
     cd /tmp/paru-bin
     makepkg -si --noconfirm
-  ' || log_fatal "paru install failed"
+  ' < /dev/null || log_fatal "paru install failed"
 }
 
 phase4_write_paru_conf() {

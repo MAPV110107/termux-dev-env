@@ -9,10 +9,15 @@ phase4_install_rns_nomadnet() {
   local username
   username="$(state_get ARCH_USERNAME)"
   log_info "Installing Reticulum (RNS) and Nomad Network via AUR"
-  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru -S --noconfirm python-rns nomadnet; then
+  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru -S --noconfirm python-rns nomadnet < /dev/null; then
     return 0
   fi
-  log_warn "RNS/Nomad Network install failed — continuing without it"
+  log_warn "AUR install failed, trying pip as a fallback"
+  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+     pip install --user --break-system-packages rns nomadnet; then
+    return 0
+  fi
+  log_warn "RNS/Nomad Network install failed via AUR and pip — continuing without it"
   return 1
 }
 

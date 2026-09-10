@@ -31,10 +31,36 @@ trap lock_release EXIT
 state_init
 
 TDE_DRY_RUN=0
+TDE_REINSTALL_PHASE=""
 for arg in "$@"; do
-  [ "$arg" = "--dry-run" ] && TDE_DRY_RUN=1
+  case "$arg" in
+    --dry-run) TDE_DRY_RUN=1 ;;
+    --reinstall=*) TDE_REINSTALL_PHASE="${arg#--reinstall=}" ;;
+  esac
 done
 export TDE_DRY_RUN
+
+if [ -n "$TDE_REINSTALL_PHASE" ]; then
+  case "$TDE_REINSTALL_PHASE" in
+    1|2|3|4|5|6)
+      # Cascades forward: reinstalling phase N without redoing phases
+      # after it can leave them configured against a stale prior state
+      # (e.g. --reinstall=3 with a different username would otherwise
+      # leave phase 4's toolchain/shell/LazyVim set up for the old one).
+      if [ "$TDE_DRY_RUN" = "1" ]; then
+        log_info "[dry-run] would clear state for phase $TDE_REINSTALL_PHASE and every phase after it"
+      else
+        local_phase="$TDE_REINSTALL_PHASE"
+        while [ "$local_phase" -le 6 ]; do
+          state_clear_prefix "PHASE${local_phase}"
+          local_phase=$((local_phase + 1))
+        done
+        log_info "Cleared state for phase $TDE_REINSTALL_PHASE onward — they will redo on this run"
+      fi
+      ;;
+    *) log_fatal "Invalid --reinstall value: '$TDE_REINSTALL_PHASE' (must be 1-6)" ;;
+  esac
+fi
 
 log_info "termux-dev-env v$(cat "$TDE_ROOT/VERSION" 2>/dev/null || echo "unknown") starting"
 [ "$TDE_DRY_RUN" = "1" ] && log_info "dry-run mode: no changes will be made"
@@ -198,4 +224,4 @@ else
   log_info "Phase 6 already completed, skipping"
 fi
 
-log_info "termux-dev-env: installation complete. Maintenance commands available: archhealth, archdiag, archupdate, archreset, archreapply."
+log_info "termux-dev-env: installation complete. Maintenance commands available: archhealth, archdiag, archupdate, archreset, archreapply, archbridge."

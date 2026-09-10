@@ -53,7 +53,7 @@ phase3_configure_termux_zshrc() {
 # executable file"). Non-fatal: the .bashrc copy of the launcher snippet
 # already covers the case where chsh doesn't take effect on some device.
 phase3_set_termux_default_shell() {
-  chsh -s "$PREFIX/bin/zsh" 2>/dev/null || \
+  chsh -s "$PREFIX/bin/zsh" < /dev/null 2>/dev/null || \
     log_warn "Could not set zsh as Termux's default shell via chsh — the .bashrc fallback still enters Arch automatically"
 }
 
