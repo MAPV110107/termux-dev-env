@@ -11,13 +11,15 @@ TDE_STATE_FILE="${TDE_STATE_FILE:-$HOME/.config/termux-dev-env/state.env}"
 state_init() { kv_init "$TDE_STATE_FILE"; }
 state_get()  { kv_get "$TDE_STATE_FILE" "$1"; }
 
-# Removes every key starting with the given prefix — used by --reinstall
-# to force a specific phase (and its granular sub-flags) to redo.
+# Removes every key starting with "<prefix>_" — used by --reinstall to
+# force a specific phase (and its granular sub-flags) to redo. Anchored
+# on the underscore so a prefix like "PHASE3" can never accidentally
+# match an unrelated future key that merely starts with the same digits.
 state_clear_prefix() {
   local prefix="$1" tmp
   [ -f "$TDE_STATE_FILE" ] || return 0
   tmp="$(mktemp "${TDE_STATE_FILE}.XXXXXX")"
-  grep -v "^${prefix}" "$TDE_STATE_FILE" > "$tmp" 2>/dev/null || true
+  grep -v "^${prefix}_" "$TDE_STATE_FILE" > "$tmp" 2>/dev/null || true
   mv "$tmp" "$TDE_STATE_FILE"
 }
 

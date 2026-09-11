@@ -37,8 +37,27 @@ phase3_import_signing_key() {
 # Tries each mirror in order; a corrupted download or a failed signature
 # both discard the file and move to the next mirror rather than aborting
 # on the first one — a single bad mirror should not block the install.
+#
+# Pinning: archlinuxarm.org only serves "latest", it doesn't keep dated
+# historical tarballs the way git keeps commits. To pin to a known-good
+# version, host your OWN verified copy (tarball + matching .sig) anywhere
+# reachable and set TDE_ROOTFS_URL_OVERRIDE to its URL — GPG verification
+# still applies, this only changes where the file comes from.
 phase3_download_and_verify() {
   local mirror tarball_url sig_url
+
+  if [ -n "${TDE_ROOTFS_URL_OVERRIDE:-}" ]; then
+    tarball_url="$TDE_ROOTFS_URL_OVERRIDE"
+    sig_url="${tarball_url}.sig"
+    log_info "Using pinned rootfs override: $tarball_url"
+    if retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url" && \
+       retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url" && \
+       gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then
+      log_info "GPG signature verified for pinned override"
+      return 0
+    fi
+    log_fatal "Pinned rootfs override failed to download or verify: $tarball_url"
+  fi
 
   for mirror in "${TDE_ARM_MIRRORS[@]}"; do
     tarball_url="http://${mirror}/os/ArchLinuxARM-aarch64-latest.tar.gz"
@@ -111,7 +130,7 @@ phase3_install_rootfs_run() {
   log_info "=== Phase 3, step 1: rootfs install ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install gnupg, download+GPG-verify the aarch64 rootfs from ${TDE_ARM_MIRRORS[*]}, run 'proot-distro install', smoke test, initialize pacman keyring, disable pacman sandbox"
+    log_info "[dry-run] would install gnupg, download+GPG-verify the aarch64 rootfs (TDE_ROOTFS_URL_OVERRIDE if set, else ${TDE_ARM_MIRRORS[*]}), run 'proot-distro install', smoke test, initialize pacman keyring, disable pacman sandbox"
     return 0
   fi
 

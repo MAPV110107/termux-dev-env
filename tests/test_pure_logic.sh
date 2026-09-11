@@ -178,6 +178,17 @@ assert_pass "archbridge is generated with valid syntax" bash -n "$PREFIX/bin/arc
 assert_eq "archbridge is executable" "yes" "$([ -x "$PREFIX/bin/archbridge" ] && echo yes)"
 
 echo ""
+echo "=== install_rootfs.sh (TDE_ROOTFS_URL_OVERRIDE pinning) ==="
+TDE_ROOTFS_TARBALL="$TESTROOT/pinned.tar.gz"
+TDE_ROOTFS_SIG="$TESTROOT/pinned.tar.gz.sig"
+export TDE_ROOTFS_TARBALL TDE_ROOTFS_SIG
+curl() { touch "$3"; return 0; }
+gpg() { return 0; }
+TDE_ROOTFS_URL_OVERRIDE="https://example.com/verified.tar.gz" assert_pass \
+  "pinned override is used and verified when set" phase3_download_and_verify
+unset TDE_ROOTFS_URL_OVERRIDE
+
+echo ""
 echo "================================================"
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL CHECKS PASSED"

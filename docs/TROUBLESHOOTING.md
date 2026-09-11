@@ -1,5 +1,22 @@
 # Troubleshooting
 
+## Pinning the Arch Linux ARM rootfs to a known-good version
+
+archlinuxarm.org only serves `latest` — unlike LazyVim's starter (a git
+repo you can pin to a commit), there's no dated/historical tarball URL
+to point at. If you've verified a specific install works well and want
+to avoid picking up a future upstream change:
+
+1. Keep a copy of the exact tarball + its `.sig` file you verified
+   (from that install's cache before Phase 5 cleaned it up, or
+   downloaded fresh from the mirror you used).
+2. Host both files anywhere reachable (your own server, cloud storage,
+   a GitHub release).
+3. Set `TDE_ROOTFS_URL_OVERRIDE` to the tarball's URL before running
+   `./core.sh` (the `.sig` is expected at the same URL with `.sig`
+   appended). GPG verification still applies — this only changes where
+   the file comes from, not whether it's checked.
+
 ## The Nerd Font install ran but icons still show as boxes
 
 This is expected right after install. Android caches font rendering at
