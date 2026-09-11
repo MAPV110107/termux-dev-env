@@ -89,6 +89,8 @@ phase3_install_archkill() {
 #!$PREFIX/bin/bash
 # Force-closes the Arch container without saving unsaved work.
 [ -f "$TDE_LAUNCHER_CONFIG" ] && . "$TDE_LAUNCHER_CONFIG"
+echo "Active tmux sessions inside Arch (these will be lost):"
+proot-distro login "$TDE_DISTRO_NAME" --user "\${ARCH_USERNAME:-user}" -- tmux list-sessions 2>/dev/null || echo "  (none found)"
 echo "This will close Arch without saving unsaved sessions. Continue? [y/N]"
 read -r confirm
 [ "\$confirm" = "y" ] || exit 0

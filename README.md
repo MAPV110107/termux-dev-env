@@ -33,10 +33,10 @@ resumes from the last completed step, it doesn't start over.
    base packages, optional Shizuku hook for the battery-exemption command.
 2. **Diagnostics** — RAM/storage/cores/API level captured, compared
    against a compatibility matrix (warns, never blocks).
-3. **Rootfs + user + launcher** — Arch Linux ARM install via
-   proot-distro's OCI pull (SHA-256 verified per layer), pacman keyring
-   init + `DisableSandbox` (both needed for pacman to work correctly
-   inside proot), validated user with passwordless sudo (wheel),
+3. **Rootfs + user + launcher** — GPG-verified Arch Linux ARM (aarch64)
+   install direct from archlinuxarm.org, pacman keyring init +
+   `DisableSandbox` (both needed for pacman to work correctly inside
+   proot), validated user with passwordless sudo (wheel),
    zsh+oh-my-zsh+agnoster in Termux itself, and the auto-login snippet
    in both `.bashrc` and `.zshrc`.
 4. **Dev environment** — compiler toolchain, Nerd Font, zsh+oh-my-zsh+
@@ -47,10 +47,11 @@ resumes from the last completed step, it doesn't start over.
    retries recoverable failures, deletes only what's confirmed good,
    writes a timestamped report to `~/.config/termux-dev-env/logs/`.
 6. **Maintenance commands** — installs `archhealth`, `archdiag`,
-   `archupdate`, `archreset`, `archreapply` to `$PREFIX/bin`, and copies
-   `lib/`+`components/` to `$PREFIX/share/termux-dev-env` so those
-   commands keep working even if this cloned repo is later moved or
-   deleted.
+   `archupdate`, `archreset`, `archreapply`, `archbridge` to `$PREFIX/bin`,
+   and copies `core.sh`+`lib/`+`components/` to
+   `$PREFIX/share/termux-dev-env` so those commands — including a full
+   reinstall via `archreset` — keep working even if this cloned repo is
+   later moved or deleted.
 
 ## Maintenance commands (after install)
 

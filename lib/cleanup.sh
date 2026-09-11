@@ -18,6 +18,7 @@ _cleanup_if() {
 }
 
 phase5_cleanup() {
+  _cleanup_if phase3_rootfs_ok "$TDE_ROOTFS_TMPDIR" "rootfs tarball + GPG key cache"
   _cleanup_if phase5_nerdfont_ok "$TDE_NERDFONT_TMPDIR" "Nerd Font download cache"
 
   if phase4_toolchain_ok; then

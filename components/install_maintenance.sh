@@ -23,6 +23,8 @@ phase6_install_shared_copy() {
   cp -r "$TDE_ROOT/lib" "$TDE_SHARE_DIR/lib"
   cp -r "$TDE_ROOT/components" "$TDE_SHARE_DIR/components"
   cp "$TDE_ROOT/VERSION" "$TDE_SHARE_DIR/VERSION" 2>/dev/null || true
+  cp "$TDE_ROOT/core.sh" "$TDE_SHARE_DIR/core.sh" 2>/dev/null || true
+  chmod +x "$TDE_SHARE_DIR/core.sh" 2>/dev/null || true
 }
 
 phase6_write_archhealth() {
@@ -174,7 +176,7 @@ case "${1:-}" in
       grep -Ev '^(PHASE3|PHASE4|PHASE5|ARCH_USERNAME)' "$STATE_FILE" > "$STATE_FILE.tmp" || true
       mv "$STATE_FILE.tmp" "$STATE_FILE"
     fi
-    echo "Container removed. Run the installer again (cd $TDE_ROOT && ./core.sh) to reinstall from phase 3 onward."
+    echo "Container removed. Run the installer again ($PREFIX/share/termux-dev-env/core.sh) to reinstall from phase 3 onward."
     ;;
   --hard)
     echo "Removes EVERYTHING: the container, launcher, and all termux-dev-env state. Continue? [y/N]"
@@ -182,7 +184,7 @@ case "${1:-}" in
     [ "$c" = "y" ] || exit 0
     proot-distro remove "$ARCH_DISTRO_ALIAS" 2>/dev/null || true
     rm -rf "$HOME/.config/termux-dev-env"
-    echo "Fully reset. Run the installer from scratch (cd $TDE_ROOT && ./core.sh)."
+    echo "Fully reset. Run the installer from scratch ($PREFIX/share/termux-dev-env/core.sh)."
     ;;
   *)
     echo "Usage: archreset --soft | --hard"
