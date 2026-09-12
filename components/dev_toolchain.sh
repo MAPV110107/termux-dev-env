@@ -41,6 +41,9 @@ phase4_install_paru() {
 
   # paru-bin ships a prebuilt binary — paru itself is Rust, and compiling
   # it on-device would be slow and defeats the project's speed goal.
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v makepkg >/dev/null 2>&1; then
+    log_fatal "makepkg not found — base-devel install may have failed"
+  fi
   log_info "Installing paru-bin (prebuilt, no on-device Rust compile)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- bash -c '
     set -e

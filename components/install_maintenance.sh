@@ -241,7 +241,7 @@ PORT="${1:-8022}"
 REMOTE_USER="${2:-root}"
 echo "Connecting to ${REMOTE_USER}@localhost:${PORT}"
 echo "(if this fails: run 'adb devices' then 'adb reverse tcp:${PORT} tcp:22' on the computer first)"
-exec ssh -p "$PORT" "${REMOTE_USER}@localhost"
+exec ssh -o StrictHostKeyChecking=accept-new -p "$PORT" "${REMOTE_USER}@localhost"
 EOF
   chmod +x "$target"
 }

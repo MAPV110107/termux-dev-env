@@ -189,6 +189,29 @@ TDE_ROOTFS_URL_OVERRIDE="https://example.com/verified.tar.gz" assert_pass \
 unset TDE_ROOTFS_URL_OVERRIDE
 
 echo ""
+echo "=== dev_toolchain.sh (makepkg guard before paru install) ==="
+assert_fail "install_paru aborts when makepkg is missing" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  source '$SCRIPT_DIR/components/dev_toolchain.sh'
+  proot-distro() {
+    case \"\$*\" in
+      *'command -v paru'*) return 1 ;;
+      *'command -v makepkg'*) return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase4_install_paru
+"
+
+echo ""
+echo "=== install_maintenance.sh (archbridge StrictHostKeyChecking) ==="
+phase6_write_archbridge
+assert_pass "archbridge sets StrictHostKeyChecking=accept-new" \
+  bash -c "grep -q 'StrictHostKeyChecking=accept-new' '$PREFIX/bin/archbridge'"
+
+echo ""
 echo "================================================"
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL CHECKS PASSED"

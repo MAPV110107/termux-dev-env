@@ -23,7 +23,7 @@ phase4_install_ohmyzsh() {
     return 0
   fi
 
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" \
+  retry_with_backoff 3 5 proot-distro login "$TDE_DISTRO_NAME" --user "$username" \
     --env OHMYZSH_URL="$TDE_OHMYZSH_INSTALL_URL" -- bash -c '
     set -e
     install_script="$(curl -fsSL "$OHMYZSH_URL")"

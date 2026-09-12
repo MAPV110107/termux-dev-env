@@ -60,7 +60,7 @@ phase3_create_user_run() {
   phase3_ensure_sudo_installed
 
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c \
-    "echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd" || \
+    "echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd && chown root:root /etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd" || \
     log_fatal "Could not configure passwordless sudo for wheel"
 
   log_info "User '$username' created with passwordless sudo (wheel group)"

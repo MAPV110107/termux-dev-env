@@ -23,7 +23,7 @@ phase3_install_termux_ohmyzsh() {
     return 0
   fi
   local install_script
-  install_script="$(curl -fsSL "$TDE_OHMYZSH_INSTALL_URL")" || \
+  install_script="$(retry_with_backoff 3 5 curl -fsSL "$TDE_OHMYZSH_INSTALL_URL")" || \
     log_fatal "Could not download the oh-my-zsh installer for Termux"
   [ -n "$install_script" ] || log_fatal "oh-my-zsh installer download for Termux returned empty content"
   RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c "$install_script" || \

@@ -40,8 +40,8 @@ phase4_setup_npm_global() {
     log_warn "Global npm install of typescript/eslint failed — <leader>lc will not work until fixed manually"
 
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c "
-    ln -sf $npm_global/bin/tsc /usr/local/bin/tsc 2>/dev/null
-    ln -sf $npm_global/bin/eslint /usr/local/bin/eslint 2>/dev/null
+    [ -f "$npm_global/bin/tsc" ] && ln -sf "$npm_global/bin/tsc" /usr/local/bin/tsc
+    [ -f "$npm_global/bin/eslint" ] && ln -sf "$npm_global/bin/eslint" /usr/local/bin/eslint
   "
 }
 
