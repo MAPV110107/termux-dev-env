@@ -212,6 +212,17 @@ assert_pass "archbridge sets StrictHostKeyChecking=accept-new" \
   bash -c "grep -q 'StrictHostKeyChecking=accept-new' '$PREFIX/bin/archbridge'"
 
 echo ""
+echo "=== lock.sh (real-device bug: bare /tmp not guaranteed in Termux) ==="
+assert_pass "lock_acquire works without a real /tmp, using \$PREFIX/tmp" bash -c "
+  export PREFIX='$TESTROOT/usr'
+  unset TMPDIR
+  source '$SCRIPT_DIR/lib/error_handling.sh'
+  source '$SCRIPT_DIR/lib/lock.sh'
+  lock_acquire
+  [ -f \"\$TDE_LOCK_FILE\" ]
+"
+
+echo ""
 echo "================================================"
 if [ "$FAILURES" -eq 0 ]; then
   echo "ALL CHECKS PASSED"

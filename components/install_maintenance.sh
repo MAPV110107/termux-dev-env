@@ -82,7 +82,10 @@ source lib/state.sh
 if [ "${1:-}" != "--quick" ]; then
   echo "=== Hardware/environment: then vs now ==="
   source lib/diagnose.sh
-  CURRENT_FILE="$(mktemp)"
+  TDE_TMP_DIR="${TMPDIR:-$PREFIX/tmp}"
+  mkdir -p "$TDE_TMP_DIR"
+  CURRENT_FILE="$(mktemp "$TDE_TMP_DIR/archdiag_current.XXXXXX")"
+  DIFF_FILE="$(mktemp "$TDE_TMP_DIR/archdiag_diff.XXXXXX")"
   {
     echo "RAM_TOTAL_MB=$(diagnose_ram_total_mb)"
     echo "RAM_AVAIL_MB=$(diagnose_ram_avail_mb)"
@@ -92,13 +95,13 @@ if [ "${1:-}" != "--quick" ]; then
     echo "ANDROID_API=$(diagnose_android_api)"
   } > "$CURRENT_FILE"
 
-  if diff "$TDE_DIAG_FILE" "$CURRENT_FILE" > "/tmp/archdiag_diff.$$"; then
+  if diff "$TDE_DIAG_FILE" "$CURRENT_FILE" > "$DIFF_FILE"; then
     echo "No changes detected since install."
   else
     echo "Changes since install:"
-    cat "/tmp/archdiag_diff.$$"
+    cat "$DIFF_FILE"
   fi
-  rm -f "$CURRENT_FILE" "/tmp/archdiag_diff.$$"
+  rm -f "$CURRENT_FILE" "$DIFF_FILE"
   echo ""
 fi
 

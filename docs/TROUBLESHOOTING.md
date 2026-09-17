@@ -111,6 +111,22 @@ adb reverse tcp:8022 tcp:22    # forward phone:8022 -> computer:22
 Do this before running `archbridge` on the phone. When done, run
 `adb reverse --remove-all` on the computer to tear the tunnel down.
 
+## `Permission denied` running `./core.sh`
+
+`chmod +x core.sh` and try again — git doesn't always preserve the
+executable bit through every clone/transfer path. Or just run
+`bash core.sh` instead of `./core.sh` anywhere in this project's docs;
+it works the same way regardless of that permission bit.
+
+## `lib/lock.sh: ... /tmp/termux-dev-env.lock: No such file or directory`
+
+Fixed as of this version — the lock file used to assume a real,
+writable `/tmp` at the filesystem root, which Termux's Android sandbox
+doesn't guarantee (unlike a normal Linux install). It now uses
+`$TMPDIR` if set, or `$PREFIX/tmp` (Termux's own, always-present temp
+directory) otherwise. If you still hit this on an old clone, `git pull`
+to get the fix.
+
 ## Something is broken and you're not sure what
 
 ```bash

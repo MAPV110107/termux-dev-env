@@ -4,7 +4,9 @@
 [ -n "${TDE_LOCK_LOADED:-}" ] && return 0
 TDE_LOCK_LOADED=1
 
-TDE_LOCK_FILE="${TDE_LOCK_FILE:-/tmp/termux-dev-env.lock}"
+TDE_LOCK_DIR="${TMPDIR:-$PREFIX/tmp}"
+mkdir -p "$TDE_LOCK_DIR" 2>/dev/null || true
+TDE_LOCK_FILE="${TDE_LOCK_FILE:-$TDE_LOCK_DIR/termux-dev-env.lock}"
 TDE_LOCK_FD=200
 
 lock_acquire() {

@@ -144,7 +144,13 @@ job.
 ```bash
 git clone https://github.com/MAPV110107/termux-dev-env
 cd termux-dev-env
+chmod +x core.sh
 ```
+
+The `chmod +x` makes `core.sh` directly runnable as `./core.sh`. If you
+ever see `Permission denied` when running it, that's this bit missing —
+run that command again, or just use `bash core.sh` instead of `./core.sh`
+anywhere in this guide, which works regardless of the executable bit.
 
 ### 3.2 (Optional) Preview what will happen
 
