@@ -10,6 +10,7 @@ phase5_nerdfont_ok() { [ -f "$HOME/.termux/font.ttf" ]; }
 phase5_rns_ok() {
   local username
   username="$(state_get ARCH_USERNAME)"
+  [ -n "$username" ] || return 1
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v rnsd >/dev/null 2>&1
 }
 

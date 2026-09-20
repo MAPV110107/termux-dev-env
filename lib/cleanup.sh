@@ -4,6 +4,9 @@
 [ -n "${TDE_CLEANUP_LOADED:-}" ] && return 0
 TDE_CLEANUP_LOADED=1
 
+TDE_ROOTFS_TMPDIR="${TDE_ROOTFS_TMPDIR:-$HOME/.cache/termux-dev-env/rootfs}"
+TDE_NERDFONT_TMPDIR="${TDE_NERDFONT_TMPDIR:-$HOME/.cache/termux-dev-env/nerdfont}"
+
 _cleanup_if() {
   local check_fn="$1" target="$2" label="$3"
   if [ ! -e "$target" ]; then
@@ -24,7 +27,7 @@ phase5_cleanup() {
   if phase4_toolchain_ok; then
     local username
     username="$(state_get ARCH_USERNAME)"
-    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin 2>/dev/null
+    [ -n "$username" ] && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin 2>/dev/null
     log_info "Cleaned up: paru build directory inside container"
   fi
 }

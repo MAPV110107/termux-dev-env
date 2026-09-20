@@ -49,6 +49,12 @@ diagnose_proot_functional() {
 
 phase2_run() {
   log_info "=== Phase 2: environment diagnostics ==="
+
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] would gather system diagnostics (RAM, storage, CPU cores, Android API), test proot execution, evaluate compatibility matrix, and save to $TDE_DIAG_FILE"
+    return 0
+  fi
+
   local ram_total ram_avail storage_free fs_type cores api proot_ok
 
   ram_total="$(diagnose_ram_total_mb)"

@@ -77,6 +77,10 @@ phase1_install_base_packages() {
   retry_with_backoff 3 5 _run pkg install -y "${packages[@]}" || \
     log_fatal "Base package install failed after retries"
 
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    return 0
+  fi
+
   local bin
   for bin in proot-distro git curl wget python; do
     command -v "$bin" >/dev/null 2>&1 || \

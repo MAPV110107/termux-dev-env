@@ -107,6 +107,7 @@ phase4_shell_setup_run() {
 phase4_shell_ok() {
   local username shell zshrc
   username="$(state_get ARCH_USERNAME)"
+  [ -n "$username" ] || return 1
   zshrc="$(container_home "$username")/.zshrc"
   shell="$(proot-distro login "$TDE_DISTRO_NAME" -- getent passwd "$username" 2>/dev/null | cut -d: -f7)"
   [ "$shell" = "/usr/bin/zsh" ] || return 1

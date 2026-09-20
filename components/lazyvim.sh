@@ -40,8 +40,8 @@ phase4_setup_npm_global() {
     log_warn "Global npm install of typescript/eslint failed — <leader>lc will not work until fixed manually"
 
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c "
-    [ -f "$npm_global/bin/tsc" ] && ln -sf "$npm_global/bin/tsc" /usr/local/bin/tsc
-    [ -f "$npm_global/bin/eslint" ] && ln -sf "$npm_global/bin/eslint" /usr/local/bin/eslint
+    [ -f \"$npm_global/bin/tsc\" ] && ln -sf \"$npm_global/bin/tsc\" /usr/local/bin/tsc
+    [ -f \"$npm_global/bin/eslint\" ] && ln -sf \"$npm_global/bin/eslint\" /usr/local/bin/eslint
   "
 }
 
@@ -231,6 +231,7 @@ phase4_lazyvim_run() {
 phase4_lazyvim_ok() {
   local username nvim_dir loaded
   username="$(state_get ARCH_USERNAME)"
+  [ -n "$username" ] || return 1
   nvim_dir="$(container_home "$username")/.config/nvim"
   [ -f "$nvim_dir/lua/config/options.lua" ] || return 1
   loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \

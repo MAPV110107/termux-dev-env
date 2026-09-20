@@ -69,6 +69,8 @@ assert_pass "kv_get survives a missing key called directly (not just via \$())" 
   kv_get "$TESTROOT/kv.env" MISSING
 kv_set "$TESTROOT/kv.env" FOO baz
 assert_eq "overwrite replaces, no duplicate line" "1" "$(grep -c '^FOO=' "$TESTROOT/kv.env")"
+kv_del "$TESTROOT/kv.env" FOO
+assert_eq "kv_del removes key" "" "$(kv_get "$TESTROOT/kv.env" FOO)"
 
 echo ""
 echo "=== state.sh ==="
@@ -79,6 +81,9 @@ assert_eq "state_set no-ops under dry-run" "" "$(state_get PHASE2_DONE)"
 state_set PHASE3_ROOTFS_INSTALLED 1
 state_set PHASE3_DONE 1
 state_set PHASE4_TOOLCHAIN 1
+state_set ARCH_USERNAME "kattze"
+state_del ARCH_USERNAME
+assert_eq "state_del clears key" "" "$(state_get ARCH_USERNAME)"
 state_clear_prefix "PHASE3"
 assert_eq "state_clear_prefix removes only the targeted phase" "1" "$(state_get PHASE4_TOOLCHAIN)"
 assert_eq "state_clear_prefix actually cleared it" "" "$(state_get PHASE3_DONE)"
@@ -220,6 +225,12 @@ assert_pass "lock_acquire works without a real /tmp, using \$PREFIX/tmp" bash -c
   source '$SCRIPT_DIR/lib/lock.sh'
   lock_acquire
   [ -f \"\$TDE_LOCK_FILE\" ]
+"
+assert_pass "lock.sh loads safely when PREFIX and TMPDIR are unset" bash -c "
+  unset PREFIX
+  unset TMPDIR
+  source '$SCRIPT_DIR/lib/error_handling.sh'
+  source '$SCRIPT_DIR/lib/lock.sh'
 "
 
 echo ""

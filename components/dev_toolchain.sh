@@ -21,8 +21,8 @@ phase4_prompt_git_identity() {
   git_name="$(_prompt "Git user.name for commits: " "")"
   git_email="$(_prompt "Git user.email for commits: " "")"
 
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.name "$git_name"
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.email "$git_email"
+  [ -n "$git_name" ] && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.name "$git_name"
+  [ -n "$git_email" ] && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- git config --global user.email "$git_email"
   # Large postBuffer avoids failed pushes on mobile connections. cache (not
   # store) keeps the credential in memory only, never written to disk —
   # costs a re-auth once a day, in exchange for never touching the disk.
@@ -87,6 +87,7 @@ phase4_dev_toolchain_run() {
 phase4_toolchain_ok() {
   local username
   username="$(state_get ARCH_USERNAME)"
+  [ -n "$username" ] || return 1
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     sh -c 'command -v gcc >/dev/null && command -v git >/dev/null && command -v paru >/dev/null' 2>/dev/null
 }

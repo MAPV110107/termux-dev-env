@@ -53,6 +53,8 @@ if [ -n "$TDE_REINSTALL_PHASE" ]; then
         local_phase="$TDE_REINSTALL_PHASE"
         while [ "$local_phase" -le 6 ]; do
           state_clear_prefix "PHASE${local_phase}"
+          [ "$local_phase" -le 3 ] && state_del "ARCH_USERNAME"
+          [ "$local_phase" -le 1 ] && state_del "SHIZUKU_AVAILABLE"
           local_phase=$((local_phase + 1))
         done
         log_info "Cleared state for phase $TDE_REINSTALL_PHASE onward — they will redo on this run"

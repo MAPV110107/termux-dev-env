@@ -15,7 +15,7 @@ TDE_INSTALL_ROOTFS_LOADED=1
 
 TDE_ARM_MIRRORS=(os.archlinuxarm.org ca.us.mirror.archlinuxarm.org eu.mirror.archlinuxarm.org)
 TDE_ARM_KEYRING_URL="https://raw.githubusercontent.com/archlinuxarm/archlinuxarm-keyring/master/archlinuxarm.gpg"
-TDE_ROOTFS_TMPDIR="$HOME/.cache/termux-dev-env"
+TDE_ROOTFS_TMPDIR="$HOME/.cache/termux-dev-env/rootfs"
 TDE_ROOTFS_TARBALL="$TDE_ROOTFS_TMPDIR/ArchLinuxARM-aarch64-latest.tar.gz"
 TDE_ROOTFS_SIG="${TDE_ROOTFS_TARBALL}.sig"
 
@@ -66,10 +66,12 @@ phase3_download_and_verify() {
 
     if ! retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url"; then
       log_warn "Download failed from $mirror, trying next mirror"
+      rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
       continue
     fi
     if ! retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url"; then
       log_warn "Signature download failed from $mirror, trying next mirror"
+      rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
       continue
     fi
     if gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then

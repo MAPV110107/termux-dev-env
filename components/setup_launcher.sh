@@ -62,6 +62,7 @@ phase3_write_launcher_config() {
   username="$(state_get ARCH_USERNAME)"
   kv_set "$TDE_LAUNCHER_CONFIG" ARCH_USERNAME "$username"
   kv_set "$TDE_LAUNCHER_CONFIG" ARCH_DISTRO_ALIAS "$TDE_DISTRO_NAME"
+  kv_set "$TDE_LAUNCHER_CONFIG" TDE_DISTRO_NAME "$TDE_DISTRO_NAME"
   kv_set "$TDE_LAUNCHER_CONFIG" TDE_ROOT "$TDE_ROOT"
 }
 
@@ -89,13 +90,14 @@ phase3_install_archkill() {
 #!$PREFIX/bin/bash
 # Force-closes the Arch container without saving unsaved work.
 [ -f "$TDE_LAUNCHER_CONFIG" ] && . "$TDE_LAUNCHER_CONFIG"
+DISTRO="\${TDE_DISTRO_NAME:-\${ARCH_DISTRO_ALIAS:-${TDE_DISTRO_NAME:-archarm}}}"
 echo "Active tmux sessions inside Arch (these will be lost):"
-proot-distro login "$TDE_DISTRO_NAME" --user "\${ARCH_USERNAME:-user}" -- tmux list-sessions 2>/dev/null || echo "  (none found)"
+proot-distro login "\$DISTRO" --user "\${ARCH_USERNAME:-user}" -- tmux list-sessions 2>/dev/null || echo "  (none found)"
 echo "This will close Arch without saving unsaved sessions. Continue? [y/N]"
 read -r confirm
 [ "\$confirm" = "y" ] || exit 0
-proot-distro login "$TDE_DISTRO_NAME" --user "\${ARCH_USERNAME:-user}" -- tmux kill-server 2>/dev/null
-proot-distro kill "$TDE_DISTRO_NAME"
+proot-distro login "\$DISTRO" --user "\${ARCH_USERNAME:-user}" -- tmux kill-server 2>/dev/null
+proot-distro kill "\$DISTRO"
 echo "Arch closed."
 EOF
   chmod +x "$target"

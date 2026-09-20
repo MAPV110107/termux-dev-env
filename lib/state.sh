@@ -10,6 +10,7 @@ TDE_STATE_FILE="${TDE_STATE_FILE:-$HOME/.config/termux-dev-env/state.env}"
 
 state_init() { kv_init "$TDE_STATE_FILE"; }
 state_get()  { kv_get "$TDE_STATE_FILE" "$1"; }
+state_del()  { kv_del "$TDE_STATE_FILE" "$1"; }
 
 # Removes every key starting with "<prefix>_" — used by --reinstall to
 # force a specific phase (and its granular sub-flags) to redo. Anchored

@@ -26,3 +26,11 @@ kv_set() {
   echo "${key}=${value}" >> "$tmp"
   mv "$tmp" "$file"
 }
+
+kv_del() {
+  local file="$1" key="$2" tmp
+  [ -f "$file" ] || return 0
+  tmp="$(mktemp "${file}.XXXXXX")"
+  grep -v "^${key}=" "$file" > "$tmp" 2>/dev/null || true
+  mv "$tmp" "$file"
+}

@@ -6,7 +6,8 @@
 [ -n "${TDE_CONTAINER_PATHS_LOADED:-}" ] && return 0
 TDE_CONTAINER_PATHS_LOADED=1
 
-TDE_ROOTFS_PATH="$PREFIX/var/lib/proot-distro/containers/$TDE_DISTRO_NAME/rootfs"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
+TDE_ROOTFS_PATH="${PREFIX:-/data/data/com.termux/files/usr}/var/lib/proot-distro/containers/$TDE_DISTRO_NAME/rootfs"
 
 container_home() {
   echo "$TDE_ROOTFS_PATH/home/$1"

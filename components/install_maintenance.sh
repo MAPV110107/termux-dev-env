@@ -35,6 +35,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
 cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
@@ -71,6 +72,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
 cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
@@ -82,7 +84,7 @@ source lib/state.sh
 if [ "${1:-}" != "--quick" ]; then
   echo "=== Hardware/environment: then vs now ==="
   source lib/diagnose.sh
-  TDE_TMP_DIR="${TMPDIR:-$PREFIX/tmp}"
+  TDE_TMP_DIR="${TMPDIR:-${PREFIX:-/tmp}/tmp}"
   mkdir -p "$TDE_TMP_DIR"
   CURRENT_FILE="$(mktemp "$TDE_TMP_DIR/archdiag_current.XXXXXX")"
   DIFF_FILE="$(mktemp "$TDE_TMP_DIR/archdiag_diff.XXXXXX")"
@@ -93,6 +95,8 @@ if [ "${1:-}" != "--quick" ]; then
     echo "FS_TYPE=$(diagnose_fs_type)"
     echo "CPU_CORES=$(diagnose_cpu_cores)"
     echo "ANDROID_API=$(diagnose_android_api)"
+    echo "PROOT_FUNCTIONAL=$(diagnose_proot_functional)"
+    echo "DIAG_TIMESTAMP=$(kv_get "$TDE_DIAG_FILE" DIAG_TIMESTAMP)"
   } > "$CURRENT_FILE"
 
   if diff "$TDE_DIAG_FILE" "$CURRENT_FILE" > "$DIFF_FILE"; then
@@ -176,7 +180,7 @@ case "${1:-}" in
     [ "$c" = "y" ] || exit 0
     proot-distro remove "$ARCH_DISTRO_ALIAS" 2>/dev/null || true
     if [ -f "$STATE_FILE" ]; then
-      grep -Ev '^(PHASE3|PHASE4|PHASE5|ARCH_USERNAME)' "$STATE_FILE" > "$STATE_FILE.tmp" || true
+      grep -Ev '^(PHASE[3-6]|ARCH_USERNAME)' "$STATE_FILE" > "$STATE_FILE.tmp" || true
       mv "$STATE_FILE.tmp" "$STATE_FILE"
     fi
     echo "Container removed. Run the installer again ($PREFIX/share/termux-dev-env/core.sh) to reinstall from phase 3 onward."
@@ -206,6 +210,7 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
 cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
 
 source lib/error_handling.sh
