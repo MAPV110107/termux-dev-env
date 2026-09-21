@@ -6,6 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TDE_ROOT="$SCRIPT_DIR"
 export TDE_ROOT
 export TDE_DISTRO_NAME="archarm"
+export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
+export TMPDIR="${TMPDIR:-$PREFIX/tmp}"
+mkdir -p "$TMPDIR" 2>/dev/null || true
 
 # shellcheck source=lib/error_handling.sh
 source "$SCRIPT_DIR/lib/error_handling.sh"
@@ -26,7 +29,12 @@ source "$SCRIPT_DIR/lib/idempotent_append.sh"
 
 log_init
 lock_acquire
-trap lock_release EXIT
+command -v termux-wake-lock >/dev/null 2>&1 && termux-wake-lock 2>/dev/null || true
+_core_cleanup() {
+  lock_release
+  command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock 2>/dev/null || true
+}
+trap _core_cleanup EXIT
 
 state_init
 

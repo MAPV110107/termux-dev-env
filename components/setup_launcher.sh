@@ -85,6 +85,7 @@ EOF
 }
 
 phase3_install_archkill() {
+  mkdir -p "$PREFIX/bin"
   local target="$PREFIX/bin/archkill"
   cat > "$target" << EOF
 #!$PREFIX/bin/bash

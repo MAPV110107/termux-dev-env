@@ -1,389 +1,241 @@
 # termux-dev-env
 
-Turns a stock Android phone into a working Arch Linux ARM development
-environment — LazyVim with no persistent LSP, zsh + oh-my-zsh + agnoster,
-git, Reticulum/Nomad Network, and a tuned aria2 setup, all running inside
-`proot-distro` under Termux.
+[![Architecture](https://img.shields.io/badge/architecture-aarch64-blue.svg)](#part-0--before-you-begin)
+[![Platform](https://img.shields.io/badge/platform-Termux%20%2F%20Android-green.svg)](#part-2--installing-and-preparing-termux)
+[![Distribution](https://img.shields.io/badge/distro-Arch%20Linux%20ARM-red.svg)](#phase-3--rootfs-user-launcher)
+[![Shell](https://img.shields.io/badge/shell-zsh%20%2B%20oh--my--zsh-yellow.svg)](#phase-4--dev-environment)
+[![Editor](https://img.shields.io/badge/editor-LazyVim%20(no--LSP)-purple.svg)](#part-5--day-to-day-usage)
 
-This guide starts from **absolute zero**: no F-Droid, no Termux, nothing
-installed. Every step is explained, not just listed — if you already have
-Termux set up, skip ahead to [Part 3](#part-3--installing-termux-dev-env).
+Turn a stock Android phone into a high-performance **Arch Linux ARM** development workstation running natively inside `proot-distro` under Termux.
+
+Features a freeze-free **LazyVim** setup configured specifically for mobile hardware (no persistent memory-hogging LSP daemon; on-demand linting via `<leader>lc`), **zsh + Oh My Zsh + agnoster**, global git identity with memory-cached credentials, Reticulum/Nomad Network, and tuned `aria2` parallel downloads.
 
 ---
 
-## Table of contents
+## ⚡ Quick Start (If you already have Termux)
 
-- [Part 0 — Before you begin](#part-0--before-you-begin)
+```bash
+# 1. Update Termux packages & install git/curl
+pkg update -y && pkg install -y git curl
+
+# 2. Clone and enter repo
+git clone https://github.com/MAPV110107/termux-dev-env
+cd termux-dev-env
+chmod +x core.sh
+
+# 3. Run the installer (or preview with --dry-run)
+./core.sh
+```
+
+---
+
+## Table of Contents
+
+- [Part 0 — Before You Begin](#part-0--before-you-begin)
 - [Part 1 — Installing F-Droid](#part-1--installing-f-droid)
-- [Part 2 — Installing and preparing Termux](#part-2--installing-and-preparing-termux)
+- [Part 2 — Installing & Preparing Termux](#part-2--installing--preparing-termux)
 - [Part 3 — Installing termux-dev-env](#part-3--installing-termux-dev-env)
-- [Part 4 — What each phase actually does](#part-4--what-each-phase-actually-does)
-- [Part 5 — Day-to-day usage](#part-5--day-to-day-usage)
-- [Part 6 — Maintenance commands](#part-6--maintenance-commands)
-- [Part 7 — Flags reference](#part-7--flags-reference)
-- [Known limitations](#known-limitations)
+- [Part 4 — Installation Phases Explained](#part-4--installation-phases-explained)
+- [Part 5 — Day-to-Day Usage](#part-5--day-to-day-usage)
+- [Part 6 — Maintenance Commands](#part-6--maintenance-commands)
+- [Part 7 — CLI Flags & Options](#part-7--cli-flags--options)
+- [Known Limitations](#known-limitations)
 
 ---
 
-## Part 0 — Before you begin
+## Part 0 — Before You Begin
 
-**What you need:**
-- An Android phone, aarch64 (64-bit ARM) — this is virtually every phone
-  sold since ~2017. If you genuinely don't know, you almost certainly
-  have one.
-- A Wi-Fi connection (the install downloads roughly 1-2 GB total).
-- At least 6 GB of free storage (3 GB is the hard minimum the installer
-  checks for; 6 GB avoids running close to the edge).
-- About 20-40 minutes, depending on your connection and device.
+### Requirements
+- **Android phone running `aarch64` (64-bit ARM)**: Virtually every Android device released since 2017.
+- **Wi-Fi connection**: The installer downloads ~1–2 GB of packages and rootfs assets.
+- **Storage**: At least **6 GB of free storage** (hard minimum is 3 GB).
+- **Time**: ~15–35 minutes depending on CPU speed and internet bandwidth.
 
-**A note on where apps come from.** This guide installs Termux via
-F-Droid, not the Google Play Store. The Play Store version of Termux was
-discontinued years ago and no longer receives updates — it's actively
-broken for this purpose. F-Droid is the correct, current source.
+> [!IMPORTANT]
+> **Source of Termux**: Do **not** install Termux from Google Play. The Play Store version was deprecated years ago and cannot update repositories. Always use [F-Droid](https://f-droid.org) or direct GitHub APKs.
 
-**A note on Android's new developer verification rules.** Starting
-September 30, 2026, Google requires apps distributed through certain
-*participating app stores* (Google Play, Samsung Galaxy Store, and a
-handful of others) to come from a registered developer, in four
-countries initially (Brazil, Indonesia, Singapore, Thailand), expanding
-globally in 2027. This does **not** apply to F-Droid or to installing an
-APK directly — both are explicitly outside that requirement. Nothing in
-this guide is affected, anywhere.
+> [!NOTE]
+> **Android Developer Verification**: Google's Play Store policy changes starting September 2026 apply strictly to participating app stores (Google Play, Galaxy Store). F-Droid and direct APK installs remain completely unaffected.
 
 ---
 
 ## Part 1 — Installing F-Droid
 
-F-Droid is a catalog of open-source Android apps, distributed as a
-direct APK install rather than through Google Play. Termux is published
-there because Play Store's policies are incompatible with what Termux
-needs to do (unrestricted package management, no forced updates outside
-its own control).
+F-Droid is an open-source catalog of verified Android applications.
 
-1. Open a browser on your phone and go to **https://f-droid.org**.
-2. Tap the **Download F-Droid** button. This downloads `F-Droid.apk` to
-   your Downloads folder.
-3. Open the downloaded file (from your notification shade, or your
-   Downloads app).
-4. Android will prompt you to allow installing from this source (the
-   browser or file manager you're using). This permission is granted
-   per-app on modern Android, not as a single global toggle — you're
-   only allowing *this specific app* to install APKs, not opening your
-   phone up broadly. Tap **Settings** in the prompt, enable it, then go
-   back and tap **Install**.
-5. Once installed, open F-Droid. On first launch it downloads its app
-   index — this can take a couple of minutes depending on your
-   connection. Let it finish.
-
-You now have F-Droid. You won't need to browse it manually — the next
-step tells you exactly what to search for.
-
-*(If you'd rather use a different F-Droid-compatible client like
-Droid-ify or Neo Store, any of them work the same way for this guide —
-install it the same way, then search for Termux inside it instead of
-step 2 below.)*
+1. Open your browser on Android and navigate to **[f-droid.org](https://f-droid.org)**.
+2. Tap **Download F-Droid** to get `F-Droid.apk`.
+3. Open the downloaded file from your notification tray or Downloads app.
+4. If prompted to allow installs from this source, tap **Settings**, enable the toggle, then tap **Install**.
+5. Launch F-Droid and wait for it to download its package index.
 
 ---
 
-## Part 2 — Installing and preparing Termux
+## Part 2 — Installing & Preparing Termux
 
 ### 2.1 Install Termux
+1. In F-Droid, search for **Termux**.
+2. Tap **Install** and open Termux once finished.
 
-1. Open F-Droid, tap the search icon, and search for **Termux**.
-2. Tap the Termux result, then **Install**.
-3. Open Termux once it's installed. You'll land on a black screen with a
-   command prompt — this is a real Linux shell running on your phone.
-
-### 2.2 Let Termux finish its own first-run setup
-
-The first time you open it, Termux sets up its own internal storage.
-Just wait a few seconds until you get a stable prompt (it'll look like
-`~ $`).
-
-### 2.3 Update Termux's own packages
-
-Termux ships with an older package index than what's actually available.
-Update it before anything else:
-
+### 2.2 First-Run Initialization & Upgrades
+Run the package updater to sync to the latest mirrors:
 ```bash
 pkg update -y && pkg upgrade -y
 ```
+*(Press `Enter` to keep default config files when prompted).*
 
-You may be asked to confirm keeping/replacing config files during the
-upgrade — the default option is fine, press Enter.
-
-### 2.4 Grant storage permission
-
-This lets Termux read/write Android's shared storage (Downloads,
-`/sdcard`, etc.):
-
+### 2.3 Grant Storage Permission
 ```bash
 termux-setup-storage
 ```
+Tap **Allow** on the Android permission popup to map `~/storage/shared`.
 
-Android will show a permission dialog — tap **Allow**. This creates a
-`~/storage/shared` symlink you can browse from Termux.
-
-### 2.5 Install git and curl
-
-These are what you need to actually get the installer onto your phone:
-
+### 2.4 Install Git & Curl
 ```bash
 pkg install -y git curl
 ```
-
-Termux is now ready. Everything from here on is `termux-dev-env`'s own
-job.
 
 ---
 
 ## Part 3 — Installing termux-dev-env
 
-### 3.1 Clone the repository
-
+### 3.1 Clone Repository
 ```bash
 git clone https://github.com/MAPV110107/termux-dev-env
 cd termux-dev-env
 chmod +x core.sh
 ```
 
-The `chmod +x` makes `core.sh` directly runnable as `./core.sh`. If you
-ever see `Permission denied` when running it, that's this bit missing —
-run that command again, or just use `bash core.sh` instead of `./core.sh`
-anywhere in this guide, which works regardless of the executable bit.
-
-### 3.2 (Optional) Preview what will happen
-
-Before touching anything real, you can see exactly what the installer
-would do:
-
+### 3.2 (Optional) Preview with Dry Run
 ```bash
 ./core.sh --dry-run
 ```
+Prints every phase and action without touching packages, writing files, or saving state.
 
-This prints every action for every phase without executing any of them
-— no packages installed, no files written, no state saved. Safe to run
-as many times as you like.
-
-### 3.3 Run the installer
-
+### 3.3 Run the Installer
 ```bash
 ./core.sh
 ```
-
-This is the real run. It will:
-- Ask a handful of questions along the way (your Arch username, your git
-  name/email for commits, whether you want an SSH server).
-- Take somewhere between 15 and 40 minutes depending on your connection
-  and device — most of that time is package downloads and the LazyVim
-  plugin sync.
-- **Resume automatically if interrupted.** If your connection drops, the
-  screen locks and Android kills the session, or you just need to stop —
-  running `./core.sh` again picks up exactly where it left off. Nothing
-  earlier gets redone.
-
-When it's done, you'll see:
-
-```
-termux-dev-env: installation complete. Maintenance commands available:
-archhealth, archdiag, archupdate, archreset, archreapply, archbridge.
-```
-
-That's it — the environment is ready. Part 5 covers how to actually use
-it day to day.
+- Prompts for your desired **Arch username**, **Git user/email**, and optional **SSH host keys**.
+- **Resumable**: If Android kills the session or your Wi-Fi disconnects, rerun `./core.sh` to resume exactly where it left off.
 
 ---
 
-## Part 4 — What each phase actually does
+## Part 4 — Installation Phases Explained
 
-The installer runs in six phases, each one resumable independently. This
-section explains what's actually happening during each one, so the wait
-isn't a black box.
+The installation operates as an idempotent 6-phase state machine:
 
-### Phase 1 — Bootstrap validation
+```
+[Phase 1: Validation] ──> [Phase 2: Diagnostics] ──> [Phase 3: Rootfs & Launcher]
+                                                              │
+[Phase 6: Maintenance] <── [Phase 5: Self-Heal & Audit] <── [Phase 4: Dev Toolchain]
+```
 
-Checks that you're really on Termux, on aarch64, that storage permission
-is really granted (by test-writing a file, not just checking the folder
-looks non-empty), that there's enough free space, and that `proot` is a
-recent enough version. Installs the handful of Termux packages the
-installer itself depends on (`proot-distro`, `git`, `curl`, `wget`,
-`python`). If you have Shizuku installed, it's used here to automate the
-battery-optimization exemption; if not, that step is just skipped
-(non-blocking).
+### Phase 1 — Bootstrap Validation
+- Verifies Termux runtime, `aarch64` CPU architecture, and free disk space.
+- Manages storage permissions and acquires a `termux-wake-lock` to prevent Android from sleeping.
+- Installs base dependencies (`proot-distro`, `git`, `curl`, `wget`, `python`).
+- Optionally automates background exemptions if **Shizuku** (`rish`) is present.
 
-### Phase 2 — Diagnostics
+### Phase 2 — Diagnostics & Compatibility
+- Probes total/available RAM, CPU cores, filesystem type, and Android API level.
+- Tests proot execution compatibility against kernel ptrace constraints.
+- Persists baseline metrics to `~/.config/termux-dev-env/diagnostics.env`.
 
-Captures your RAM, storage, CPU cores, and Android API level, and
-compares them against a compatibility matrix. Below the recommended
-values just prints a warning and continues — this never blocks the
-install, it just tells you what to expect.
+### Phase 3 — Rootfs, User & Launcher
+- Downloads official Arch Linux ARM rootfs from active mirrors with **GPG signature verification**.
+- Initializes pacman keyring (`pacman-key --init` with `disable-scdaemon`) and disables pacman sandboxing (`DisableSandbox`) required under proot.
+- Creates your user account with passwordless `sudo` (`wheel` group).
+- Installs and configures zsh + Oh My Zsh + agnoster in Termux, writing the auto-login hook into `.bashrc` and `.zshrc`.
+- Installs the emergency `archkill` command in `$PREFIX/bin`.
 
-### Phase 3 — Rootfs, user, launcher
+### Phase 4 — Dev Environment
+- Installs development toolchain (`base-devel`, `git`, `nodejs`, `npm`, `tree-sitter-cli`, `python-pip`, `nano`, `wget`, `curl`).
+- Configures git credential caching (in-memory 24h cache; never written to plaintext storage).
+- Installs `paru-bin` (AUR helper) with pre-tuned non-interactive configuration.
+- Installs JetBrainsMono Nerd Font (Mono variant) to `~/.termux/font.ttf`.
+- Preconfigures **LazyVim**:
+  - Disabled persistent LSP daemons to eliminate mobile memory locks, ghost-text lag, and buffer freezing.
+  - Replaced neo-tree with `oil.nvim` (`-` key).
+  - Configured on-demand linting via `<leader>lc` (`tsc --noEmit`).
+  - Pre-compiled core Treesitter parsers (JS/TS, Lua, Bash, JSON, Markdown, YAML, TOML).
+- Installs Reticulum Network Stack (RNS), Nomad Network, and speed-optimized `aria2` config (non-blocking).
+- Configures optional OpenSSH server host keys.
 
-The biggest phase. Downloads the official Arch Linux ARM rootfs
-(aarch64-specific) directly from archlinuxarm.org, verifies it with GPG
-before doing anything with it, and installs it via `proot-distro`. Then:
-- Initializes pacman's keyring and disables its sandboxed download mode
-  (proot doesn't support the Linux namespaces that sandbox needs — this
-  is required for pacman to work at all inside proot, not optional
-  hardening being skipped).
-- Prompts for a username, validates it, creates the user with
-  passwordless `sudo` access.
-- Installs zsh + oh-my-zsh + the agnoster theme + autosuggestions in
-  **Termux itself** (not just inside Arch), and tries to make it your
-  default Termux shell.
-- Writes the auto-login snippet to both `.bashrc` and `.zshrc` — so
-  opening Termux drops you straight into Arch, regardless of which shell
-  ends up as your actual default.
-- Installs `archkill`, a command to force-close Arch if something ever
-  gets stuck.
+### Phase 5 — Functional Audit, Self-Heal & Cleanup
+- Verifies live post-conditions for all critical and optional components.
+- Automatically retries non-blocking items (fonts, telecom) once before concluding.
+- Safely cleans verified tarballs and temporary caches from `~/.cache/termux-dev-env/rootfs`.
+- Writes full timestamped audit logs to `~/.config/termux-dev-env/logs/`.
 
-### Phase 4 — Dev environment
-
-Everything that makes the environment actually usable:
-- Compiler toolchain (`base-devel`, `git`, `nodejs`, `npm`, and a few
-  basics like `nano`/`wget`/`curl`), your git identity, and `paru`
-  (prebuilt, not compiled on-device — building it yourself would be slow
-  and isn't necessary).
-- A Nerd Font (needed for the editor/prompt icons to render — this step
-  is non-blocking, since a font failing doesn't break anything
-  functional, just cosmetics).
-- zsh + oh-my-zsh + agnoster **inside Arch** too, so both sides of the
-  launcher match.
-- LazyVim, configured deliberately **without** a persistent language
-  server. That's not a missing feature — it's the actual fix for the
-  freezes, ghost text, and buftype bugs that motivated this whole
-  project in the first place. In its place: `oil.nvim` as the file
-  explorer, and an on-demand `<leader>lc` keymap that runs `tsc`/`eslint`
-  only when you ask for it. Treesitter parsers for the languages you'll
-  actually use are pre-installed so there's no first-open compile delay.
-- Reticulum/Nomad Network and a speed-tuned `aria2` config (non-blocking
-  — a failure here doesn't stop the rest of the install, and retries
-  automatically on your next run).
-- Optionally, an SSH server inside Arch (opt-in — you're asked).
-
-### Phase 5 — Audit, self-heal, cleanup, report
-
-Re-verifies every single component that was just installed — not just
-"did the command exit zero", but the actual real-world condition (is the
-user's UID really there, is the theme really set, can `tsc` really be
-found). Anything non-critical that failed (the font, the telecom
-packages) gets one automatic retry here. Everything is cleaned up
-(downloaded tarballs, build directories) — but only what passed
-verification; anything that failed its check is kept on disk so you can
-inspect what went wrong. A full report lands in
-`~/.config/termux-dev-env/logs/`.
-
-### Phase 6 — Maintenance commands
-
-Installs five commands to `$PREFIX/bin` (covered in detail in
-[Part 6](#part-6--maintenance-commands)), and copies the installer's own
-`core.sh` + `lib/` + `components/` to `$PREFIX/share/termux-dev-env` — so
-those commands, and even a full reinstall, keep working even if you
-later move or delete the folder you cloned in step 3.1.
+### Phase 6 — Maintenance Commands
+- Installs standalone maintenance commands to `$PREFIX/bin`.
+- Syncs a permanent copy of installer libraries to `$PREFIX/share/termux-dev-env`.
 
 ---
 
-## Part 5 — Day-to-day usage
+## Part 5 — Day-to-Day Usage
 
-**Opening Termux** drops you straight into Arch automatically (via the
-launcher installed in Phase 3). You'll land in a tmux session with your
-zsh prompt.
+### Entering & Leaving
+- **Launch**: Opening Termux automatically drops you into your Arch Linux zsh environment inside tmux.
+- **Exit**: Type `exit` to close your session.
+- **Force Kill**: If a container process hangs, open a new Termux tab and run `archkill`.
+- **Bypass Auto-Login**: Run `TDE_SKIP_LAUNCHER=1 zsh` to drop directly into a plain Termux host shell.
 
-**Editing a file:**
-```bash
-nvim yourfile.ts
-```
-Opens instantly — there's no language server loading in the background.
-Syntax highlighting and completion (buffer/path/snippets) work
-immediately.
+### Editor Keymaps & Workflow
 
-**Checking your code** (on demand, not automatic):
-```
-<leader>lc
-```
-Runs `tsc`/`eslint` against the current file and shows the result. This
-is deliberately not automatic — it costs nothing while you're just
-editing.
-
-**File explorer** — press `-` to open `oil.nvim`. Creating, renaming, and
-deleting files happens by editing the directory listing itself and
-saving, not through a separate menu.
-
-**Committing:**
-```bash
-git add -A
-git commit -m "message"
-git push
-```
-Your git identity was already configured during Phase 4. The first push
-to a private remote will ask for credentials once (cached for 24 hours,
-never written to disk).
-
-**Terminal inside Neovim** — `Ctrl-/` opens a terminal that's explicitly
-set to zsh, matching your shell outside the editor.
-
-**Leaving** — type `exit`, or if Arch is ever stuck, run `archkill` from
-a fresh Termux session (it lists your active tmux sessions first so you
-know what you're about to lose, then asks for confirmation).
-
-**Escape hatch** — if the auto-login into Arch is ever the problem
-itself (a broken container you need to get past), run:
-```bash
-TDE_SKIP_LAUNCHER=1 zsh
-```
-or export `TDE_SKIP_LAUNCHER=1` before opening Termux, to land in a
-plain Termux shell instead.
-
----
-
-## Part 6 — Maintenance commands
-
-Available from any Termux session after installation:
-
-| Command | What it does |
+| Shortcut / Command | Action |
 |---|---|
-| `archhealth` | Quick pass/fail check of every component |
-| `archdiag [--quick]` | Hardware diff (now vs. install time) + component health + state dump |
-| `archupdate [--with-backup]` | Snapshots installed packages, runs `pacman -Syu`, optionally backs up the whole rootfs first, re-checks health afterward |
-| `archreset --soft` | Reinstalls just the Arch container, keeps Phase 1-2 (bootstrap/diagnostics already validated) |
-| `archreset --hard` | Wipes everything — container, launcher, all state — for a completely clean start |
-| `archreapply` | Reinstalls the launcher snippet + `archkill`, safe to run anytime |
-| `archbridge [port] [user]` | SSH into a computer through an `adb reverse` tunnel (default port 8022, user root) — run `adb reverse tcp:8022 tcp:22` on the computer first |
+| `nvim <file>` | Open LazyVim (instant startup, syntax highlighting, snippet completion) |
+| `<leader>lc` | **On-demand lint/typecheck**: runs `tsc` / `eslint` against current buffer |
+| `-` | Open `oil.nvim` file manager to edit filesystem as a buffer |
+| `Ctrl-/` | Toggle embedded zsh terminal pane |
+| `git push` | Push to remote (token cached securely in memory for 24 hours) |
 
 ---
 
-## Part 7 — Flags reference
+## Part 6 — Maintenance Commands
+
+Accessible from any Termux shell after installation:
+
+| Command | Description |
+|---|---|
+| `archhealth` | Quick pass/fail component audit across the container and host hooks. |
+| `archdiag [--quick]` | Full system diagnostics: hardware drift (then vs. now), state flags, and component check. |
+| `archupdate [--with-backup]` | Snapshots package list, runs `pacman -Syu`, optionally backs up full container, and re-audits health. |
+| `archreset --soft` | Wipes and reinstalls the Arch container from Phase 3 onward (preserves validated bootstrap). |
+| `archreset --hard` | Complete reset: wipes container, configuration, launcher hooks, and state. |
+| `archreapply` | Reinstalls launcher snippets into `.bashrc`/`.zshrc` and refreshes `archkill`. |
+| `archbridge [port] [user]` | Connects outbound SSH tunnel to a computer over `adb reverse` (e.g. `adb reverse tcp:8022 tcp:22`). |
+
+---
+
+## Part 7 — CLI Flags & Options
 
 ```bash
-./core.sh                        # run or resume the installer
-./core.sh --dry-run               # preview every phase, change nothing
-./core.sh --reinstall=4           # clear phase 4 AND every phase after it (1-6), then redo
-./core.sh --dry-run --reinstall=3 # combine: preview what redoing phase 3 onward would touch
+# Standard run (or resume from last checkpoint)
+./core.sh
+
+# Dry-run: preview all actions without executing
+./core.sh --dry-run
+
+# Force reinstall from a specific phase onward (cascades forward 1-6)
+./core.sh --reinstall=3
+
+# Combine dry-run with targeted phase reinstall
+./core.sh --dry-run --reinstall=4
 ```
 
-`--reinstall` cascades forward deliberately — reinstalling an early
-phase (say, phase 3, which can produce a different Arch username)
-without redoing the phases after it would leave them configured against
-a now-stale state.
-
-Advanced: `TDE_ROOTFS_URL_OVERRIDE` lets you pin the Arch Linux ARM
-rootfs to a specific, personally-verified copy instead of always
-fetching the current `latest` — see `docs/TROUBLESHOOTING.md` for how
-and why.
+### Advanced Environment Variables
+- `TDE_ROOTFS_URL_OVERRIDE`: Supply a custom URL to a verified Arch ARM rootfs tarball (accompanied by `<url>.sig`).
+- `TDE_SKIP_LAUNCHER=1`: Bypasses the auto-login hook when launching a Termux session.
 
 ---
 
-## Known limitations
+## Known Limitations
 
-- **No file bridge yet** between Android's shared storage and the Arch
-  container. The login session uses `--isolated`, which intentionally
-  doesn't bind `/sdcard`. Everything currently lives inside the
-  container's own filesystem.
-- The Nerd Font install can't be verified from a script — if icons show
-  as boxes after install, force-stop Termux from Android's app settings
-  and reopen it (see `docs/TROUBLESHOOTING.md`).
-- 32-bit ARM (`armv7`) devices aren't supported — this targets aarch64
-  specifically.
+- **Isolated Storage**: Container runs with `--isolated` (proot filesystem isolation). Android `/sdcard` is not mounted inside the container by default.
+- **Font Rendering Cache**: After installing Nerd Fonts, force-stop Termux in Android Settings and relaunch if glyphs appear as boxes.
+- **Architecture**: Exclusively supports 64-bit ARM (`aarch64`). 32-bit ARM (`armv7l`) and x86_64 devices are not supported.
 
-For anything not covered here, see `docs/TROUBLESHOOTING.md`.
+For detailed debugging steps, mirror selection, and edge cases, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).

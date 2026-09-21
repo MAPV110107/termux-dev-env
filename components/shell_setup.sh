@@ -80,6 +80,7 @@ phase4_write_zshrc_extras() {
 
   idempotent_append "$zshrc" "runtime" '
 export PROOT_ACTIVE=1
+export PATH="$HOME/.local/bin:$PATH"
 if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
   tmux attach -t main 2>/dev/null || tmux new -s main
 fi'

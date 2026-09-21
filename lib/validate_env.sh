@@ -34,7 +34,12 @@ _prompt() {
 
 phase1_check_termux() {
   if [ -z "${PREFIX:-}" ] || [ ! -d "$PREFIX" ]; then
-    log_fatal "Not running inside Termux (\$PREFIX unset or missing)"
+    if [ -d "/data/data/com.termux/files/usr" ]; then
+      PREFIX="/data/data/com.termux/files/usr"
+      export PREFIX
+    else
+      log_fatal "Not running inside Termux (\$PREFIX unset or missing)"
+    fi
   fi
   case "$PREFIX" in
     */com.termux/files/usr) ;;
@@ -49,9 +54,26 @@ phase1_check_arch() {
 }
 
 phase1_check_storage_permission() {
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] checking storage permissions"
+    return 0
+  fi
   local test_file="$HOME/storage/shared/.termux-dev-env-write-test"
   if ! [ -d "$HOME/storage/shared" ] || ! ( touch "$test_file" 2>/dev/null && rm -f "$test_file" ); then
-    log_fatal "Storage permission not granted — run 'termux-setup-storage' first"
+    if command -v termux-setup-storage >/dev/null 2>&1; then
+      log_info "Requesting Termux storage permission via termux-setup-storage..."
+      termux-setup-storage
+      local retries=5
+      while [ "$retries" -gt 0 ]; do
+        sleep 2
+        if [ -d "$HOME/storage/shared" ] && ( touch "$test_file" 2>/dev/null && rm -f "$test_file" ); then
+          log_info "Storage permission granted"
+          return 0
+        fi
+        retries=$((retries - 1))
+      done
+    fi
+    log_fatal "Storage permission not granted — grant permission in Android settings or run 'termux-setup-storage'"
   fi
 }
 
