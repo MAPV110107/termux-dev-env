@@ -1,5 +1,6 @@
-*.swp
-*.tmp
+.swp
+.tmp
+.gitignore
 .git
 .env
 AGENTS.md
