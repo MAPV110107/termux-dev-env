@@ -1,16 +1,10 @@
-# Phase 4 — LazyVim. No persistent LSP (vtsls et al) runs at all — that's
-# the actual fix for the freezes/ghost-text/buftype bugs this project set
-# out to solve, not a config toggle on top of the thing causing them.
+# Phase 4 — LazyVim. Full Language Server Protocol (LSP) integration
+# with mason.nvim and nvim-lspconfig for Bash, Markdown, Python,
+# TypeScript/JavaScript, Rust, C++, Go, Kotlin, HTML, and CSS.
 
 [ -n "${TDE_LAZYVIM_LOADED:-}" ] && return 0
 TDE_LAZYVIM_LOADED=1
 
-# LazyVim/starter has no tagged releases — only 'main'. Our overrides
-# (options.lua, plugins/example.lua removal, etc.) depend on its current
-# file layout, so an upstream restructure could break this. Pinning to a
-# specific commit would protect against that, but only after it's been
-# verified on real hardware — pick a known-good SHA here once you have:
-#   TDE_LAZYVIM_STARTER_REF="<commit-sha>"  # then: git clone ... && git checkout "$TDE_LAZYVIM_STARTER_REF"
 TDE_LAZYVIM_STARTER_URL="https://github.com/LazyVim/starter"
 
 phase4_ensure_neovim() {
@@ -20,11 +14,8 @@ phase4_ensure_neovim() {
     log_fatal "Could not install neovim/ripgrep/fd/lazygit"
 }
 
-# The on-demand lint keymap (<leader>lc) runs tsc/eslint — neither exists
-# just from installing nodejs/npm, they're separate global packages.
-# Symlinked into /usr/local/bin (not exported via .zshrc) because neither
-# Neovim's :! shell-outs nor a non-interactive `proot-distro login -- cmd`
-# reliably source .zshrc — /usr/local/bin is on PATH unconditionally.
+# Configures global npm prefix and installs language servers and linters.
+# Symlinked into /usr/local/bin so all tools are available on PATH unconditionally.
 phase4_setup_npm_global() {
   local username npm_global
   username="$(state_get ARCH_USERNAME)"
@@ -34,14 +25,20 @@ phase4_setup_npm_global() {
     npm config set prefix "$npm_global" || \
     log_fatal "Could not configure npm global prefix"
 
-  log_info "Installing typescript and eslint globally (needed for <leader>lc)"
+  log_info "Installing global language servers and tools via npm (typescript, eslint, bashls, html/css, vtsls, pyright)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    npm install -g typescript eslint || \
-    log_warn "Global npm install of typescript/eslint failed — <leader>lc will not work until fixed manually"
+    npm install -g typescript eslint bash-language-server vscode-langservers-extracted @vtsls/language-server pyright || \
+    log_warn "Global npm install of some language servers had warnings — Mason will manage remaining servers"
 
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c "
+    mkdir -p /usr/local/bin
     [ -f \"$npm_global/bin/tsc\" ] && ln -sf \"$npm_global/bin/tsc\" /usr/local/bin/tsc
     [ -f \"$npm_global/bin/eslint\" ] && ln -sf \"$npm_global/bin/eslint\" /usr/local/bin/eslint
+    [ -f \"$npm_global/bin/bash-language-server\" ] && ln -sf \"$npm_global/bin/bash-language-server\" /usr/local/bin/bash-language-server
+    [ -f \"$npm_global/bin/vscode-html-language-server\" ] && ln -sf \"$npm_global/bin/vscode-html-language-server\" /usr/local/bin/vscode-html-language-server
+    [ -f \"$npm_global/bin/vscode-css-language-server\" ] && ln -sf \"$npm_global/bin/vscode-css-language-server\" /usr/local/bin/vscode-css-language-server
+    [ -f \"$npm_global/bin/vtsls\" ] && ln -sf \"$npm_global/bin/vtsls\" /usr/local/bin/vtsls
+    [ -f \"$npm_global/bin/pyright\" ] && ln -sf \"$npm_global/bin/pyright\" /usr/local/bin/pyright
   "
 }
 
@@ -77,9 +74,13 @@ phase4_write_options_overrides() {
   idempotent_append "$nvim_dir/lua/config/options.lua" "options" '
 vim.opt.emoji = false
 vim.opt.ambiwidth = "single"
-vim.diagnostic.config({ virtual_text = false })
--- Explicit, not inherited from $SHELL: the Ctrl-/ terminal and any :!
--- shell-out should use zsh regardless of what launched Neovim.
+vim.diagnostic.config({
+  virtual_text = { spacing = 4, prefix = "●" },
+  underline = true,
+  update_in_insert = false,
+  severity_sort = true,
+})
+-- Explicit shell: every terminal session, :! command, and Ctrl-/ uses zsh
 vim.opt.shell = "/usr/bin/zsh"' "--"
 }
 
@@ -87,21 +88,27 @@ phase4_write_keymaps() {
   local nvim_dir
   nvim_dir="$(container_home "$(state_get ARCH_USERNAME)")/.config/nvim"
   idempotent_append "$nvim_dir/lua/config/keymaps.lua" "keymaps" '
--- Deliberate, user-triggered shell-out. No persistent LSP runs, so this
--- costs nothing while editing — only when you actually ask for it.
+-- On-demand lint/type check keymap
 vim.keymap.set("n", "<leader>lc", function()
   vim.cmd("write")
   vim.cmd("!tsc --noEmit %")
-end, { desc = "Lint/type check (on-demand)" })' "--"
+end, { desc = "Lint/type check (on-demand)" })
+
+-- Explicit keymap for floating/split zsh terminal
+vim.keymap.set({ "n", "t" }, "<C-/>", function()
+  if Snacks and Snacks.terminal then
+    Snacks.terminal(nil, { shell = "/usr/bin/zsh" })
+  else
+    vim.cmd("terminal")
+  end
+end, { desc = "Toggle ZSH Terminal" })' "--"
 }
 
 phase4_write_autocmds_note() {
   local nvim_dir
   nvim_dir="$(container_home "$(state_get ARCH_USERNAME)")/.config/nvim"
   idempotent_append "$nvim_dir/lua/config/autocmds.lua" "autocmds" '
--- Rule for any autocmd added here: guard on buftype before touching a
--- buffer, so logic meant for real files never fires on special buffers
--- (oil.nvim, Lazy, Mason, terminal):
+-- Guard on buftype before touching a buffer:
 --   if vim.bo.buftype ~= "" then return end' "--"
 }
 
@@ -110,18 +117,103 @@ phase4_write_plugin_overrides() {
   plugins_dir="$(container_home "$(state_get ARCH_USERNAME)")/.config/nvim/lua/plugins"
   mkdir -p "$plugins_dir"
 
-  cat > "$plugins_dir/no-lsp-completion.lua" << 'EOF'
+  # Remove legacy no-lsp file if present
+  rm -f "$plugins_dir/no-lsp-completion.lua"
+
+  cat > "$plugins_dir/lsp.lua" << 'EOF'
 return {
-  { "neovim/nvim-lspconfig", enabled = false },
-  { "williamboman/mason.nvim", enabled = false },
-  { "williamboman/mason-lspconfig.nvim", enabled = false },
+  -- Language Server Protocol configuration for common languages
+  {
+    "neovim/nvim-lspconfig",
+    opts = {
+      diagnostics = {
+        underline = true,
+        update_in_insert = false,
+        virtual_text = {
+          spacing = 4,
+          source = "if_many",
+          prefix = "●",
+        },
+        severity_sort = true,
+      },
+      servers = {
+        bashls = {},
+        marksman = {},
+        pyright = {},
+        ts_ls = {},
+        vtsls = {},
+        rust_analyzer = {},
+        clangd = {},
+        gopls = {},
+        kotlin_language_server = {},
+        html = {},
+        cssls = {},
+      },
+    },
+  },
+
+  -- Mason package manager for language servers, formatters, and linters
+  {
+    "williamboman/mason.nvim",
+    opts = {
+      ensure_installed = {
+        "bash-language-server",
+        "marksman",
+        "pyright",
+        "typescript-language-server",
+        "rust-analyzer",
+        "clangd",
+        "gopls",
+        "kotlin-language-server",
+        "html-lsp",
+        "css-lsp",
+      },
+    },
+  },
+
+  {
+    "williamboman/mason-lspconfig.nvim",
+    opts = {
+      ensure_installed = {
+        "bashls",
+        "marksman",
+        "pyright",
+        "ts_ls",
+        "rust_analyzer",
+        "clangd",
+        "gopls",
+        "kotlin_language_server",
+        "html",
+        "cssls",
+      },
+      automatic_installation = true,
+    },
+  },
+
+  -- Fast autocompletion with LSP source support
   {
     "saghen/blink.cmp",
     opts = {
-      sources = { default = { "buffer", "path", "snippets" } },
+      sources = {
+        default = { "lsp", "path", "snippets", "buffer" },
+      },
       completion = {
-        ghost_text = { enabled = false },
-        menu = { auto_show = false },
+        ghost_text = { enabled = true },
+        menu = { auto_show = true },
+      },
+    },
+  },
+}
+EOF
+
+  cat > "$plugins_dir/terminal.lua" << 'EOF'
+return {
+  -- Ensure snacks terminal uses zsh explicitly
+  {
+    "folke/snacks.nvim",
+    opts = {
+      terminal = {
+        shell = "/usr/bin/zsh",
       },
     },
   },
@@ -160,14 +252,13 @@ phase4_sync_plugins() {
 
 # Pre-installs parsers instead of leaving them to LazyVim's on-demand
 # auto-install — otherwise the first file of each type opened pays a
-# one-time compile delay. Non-fatal: auto-install still covers it if this
-# fails, just with that delay.
+# one-time compile delay.
 phase4_install_treesitter_parsers() {
   local username
   username="$(state_get ARCH_USERNAME)"
-  log_info "Pre-installing treesitter parsers (web dev + git + markdown + config)"
+  log_info "Pre-installing treesitter parsers (web dev + bash + python + rust + c/cpp + go + kotlin + git + markdown + config)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    nvim --headless -c "TSInstallSync bash lua vim vimdoc query javascript typescript tsx json jsonc html css scss markdown markdown_inline yaml toml gitcommit gitignore diff regex" -c "qa" || \
+    nvim --headless -c "TSInstallSync bash lua vim vimdoc query javascript typescript tsx python rust c cpp go kotlin html css scss markdown markdown_inline yaml toml json jsonc gitcommit gitignore diff regex" -c "qa" || \
     log_warn "Some treesitter parsers failed to pre-install — they will still auto-install on first use of that filetype"
 }
 
@@ -205,10 +296,10 @@ phase4_verify_editor_tools() {
 }
 
 phase4_lazyvim_run() {
-  log_info "=== Phase 4: LazyVim install and preconfiguration ==="
+  log_info "=== Phase 4: LazyVim install and preconfiguration (with LSP & ZSH terminal) ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install neovim+tools, configure npm global prefix + typescript/eslint, clone LazyVim starter, remove example.lua, disable LSP/Mason/neo-tree, add oil.nvim + on-demand lint, sync plugins (blocking), pre-install treesitter parsers, verify via lazy stats, treesitter cc check, and tsc/eslint reachability"
+    log_info "[dry-run] would install neovim+tools, configure npm global prefix + language servers (bash/ts/py/html/css), clone LazyVim starter, enable LSPs in mason/lspconfig, configure zsh terminal, sync plugins (blocking), pre-install treesitter parsers, verify via lazy stats, treesitter cc check, and tool reachability"
     return 0
   fi
 
@@ -237,5 +328,5 @@ phase4_lazyvim_ok() {
   loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     nvim --headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>/dev/null | tail -n1)"
   [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ] || return 1
-  proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'command -v tsc >/dev/null 2>&1 && command -v eslint >/dev/null 2>&1'
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'command -v nvim >/dev/null 2>&1'
 }

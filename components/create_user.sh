@@ -29,18 +29,20 @@ phase3_prompt_username() {
 }
 
 phase3_ensure_sudo_installed() {
-  log_info "Installing sudo inside $TDE_DISTRO_NAME"
-  proot-distro login "$TDE_DISTRO_NAME" -- pacman -Sy --noconfirm sudo || \
-    log_fatal "Could not install sudo inside $TDE_DISTRO_NAME"
+  log_info "Installing sudo and zsh inside $TDE_DISTRO_NAME"
+  proot-distro login "$TDE_DISTRO_NAME" -- pacman -Sy --noconfirm sudo zsh || \
+    log_fatal "Could not install sudo/zsh inside $TDE_DISTRO_NAME"
 }
 
 phase3_create_user_run() {
   log_info "=== Phase 3, step 2: user creation ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would prompt for a username, useradd -m -G wheel inside $TDE_DISTRO_NAME, install sudo, enable passwordless sudo for wheel"
+    log_info "[dry-run] would prompt for a username, useradd -m -G wheel -s /usr/bin/zsh inside $TDE_DISTRO_NAME, install sudo/zsh, enable passwordless sudo for wheel"
     return 0
   fi
+
+  phase3_ensure_sudo_installed
 
   local username
   username="$(phase3_prompt_username)"
@@ -50,20 +52,19 @@ phase3_create_user_run() {
   # later step (sudo install, sudoers.d write), a naive retry would call
   # useradd again on the same name and crash with "user already exists".
   if proot-distro login "$TDE_DISTRO_NAME" -- id -u "$username" >/dev/null 2>&1; then
-    log_info "User '$username' already exists, skipping useradd"
+    log_info "User '$username' already exists, ensuring shell is zsh"
+    proot-distro login "$TDE_DISTRO_NAME" -- usermod -s /usr/bin/zsh "$username" 2>/dev/null || true
   else
     log_info "Creating user '$username' inside $TDE_DISTRO_NAME"
-    proot-distro login "$TDE_DISTRO_NAME" -- useradd -m -G wheel -s /bin/bash "$username" || \
+    proot-distro login "$TDE_DISTRO_NAME" -- useradd -m -G wheel -s /usr/bin/zsh "$username" || \
       log_fatal "useradd failed for '$username'"
   fi
-
-  phase3_ensure_sudo_installed
 
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c \
     "echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd && chown root:root /etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd" || \
     log_fatal "Could not configure passwordless sudo for wheel"
 
-  log_info "User '$username' created with passwordless sudo (wheel group)"
+  log_info "User '$username' created with zsh shell and passwordless sudo (wheel group)"
 }
 
 # Post-condition, checked by core.sh before marking PHASE3_USER_CREATED.

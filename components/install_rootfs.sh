@@ -116,7 +116,8 @@ phase3_disable_pacman_sandbox() {
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
     grep -q "^DisableSandbox" /etc/pacman.conf || \
     sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
-  ' || log_warn "Could not set DisableSandbox in pacman.conf — pacman operations may hang or fail inside proot"
+    sed -i "s/^#ParallelDownloads = .*/ParallelDownloads = 5/" /etc/pacman.conf
+  ' || log_warn "Could not configure pacman options in pacman.conf"
 }
 
 # Post-condition, checked by core.sh before marking PHASE3_ROOTFS_INSTALLED —

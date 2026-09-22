@@ -7,11 +7,11 @@
 TDE_DEV_TOOLCHAIN_LOADED=1
 
 phase4_sync_and_install_toolchain() {
-  log_info "Syncing pacman and installing base toolchain"
+  log_info "Syncing pacman and installing base toolchain and language runtimes"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
     log_fatal "pacman -Syu failed inside $TDE_DISTRO_NAME"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
-    base-devel git tree-sitter-cli nodejs npm python-pip nano wget curl || \
+    base-devel git tree-sitter-cli nodejs npm python python-pip clang rust go marksman nano wget curl || \
     log_fatal "Toolchain package install failed"
 }
 

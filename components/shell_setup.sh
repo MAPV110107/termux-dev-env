@@ -74,15 +74,22 @@ phase4_set_default_shell() {
 }
 
 phase4_write_zshrc_extras() {
-  local username zshrc
+  local username zshrc bashrc
   username="$(state_get ARCH_USERNAME)"
   zshrc="$(container_home "$username")/.zshrc"
+  bashrc="$(container_home "$username")/.bashrc"
 
   idempotent_append "$zshrc" "runtime" '
 export PROOT_ACTIVE=1
 export PATH="$HOME/.local/bin:$PATH"
 if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
   tmux attach -t main 2>/dev/null || tmux new -s main
+fi'
+
+  idempotent_append "$bashrc" "runtime" '
+if [ -z "$PROOT_ACTIVE" ] && [ -x /usr/bin/zsh ]; then
+  export PROOT_ACTIVE=1
+  exec /usr/bin/zsh
 fi'
 }
 
