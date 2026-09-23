@@ -134,6 +134,30 @@ proot-distro login archarm -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacma
 ./core.sh
 ```
 
+## `df: unknown option 'm'` or Phase 1/2 fail right at the free-space / diagnostics check
+
+Termux's own `coreutils` package deliberately ships **without** `df`
+(`termux-packages/packages/coreutils/build.sh`: `--enable-no-install-program=...,df,...`
+with the comment `# df does not work either, let system binary prevail`).
+So on a real device, `df` on `$PATH` is Android's own **toybox** `df`,
+which only understands `-P`/`-k` (1024-byte-block output) — not GNU
+coreutils' `-m`. As of this version the installer uses `df -k` and
+converts to MB itself, which both toybox and GNU coreutils support
+identically, so this should no longer come up. If you're on an old
+clone and still hit it, `git pull` (or apply the fix by hand: replace
+`df -m "$PREFIX" | awk 'NR==2 {print $4}'` with
+`df -k "$PREFIX" | awk 'NR==2 {print int($4/1024)}'` in both
+`lib/validate_env.sh` and `lib/diagnose.sh`).
+
+The same root cause affects a bare `mount` call: it's not a Termux
+package either (`termux-packages` issues #14495, #10207), and
+`/system/bin` is deliberately never added to Termux's `$PATH` (it would
+shadow Termux's own tools). `diagnose_fs_type` now falls back to
+`/system/bin/mount` directly when nothing named `mount` is found, and
+never blocks the install even if that still can't be parsed — the
+filesystem type is informational only, logged as `unknown` rather than
+failing Phase 2.
+
 ## `pacman` hangs or fails with signature errors inside Arch
 
 Phase 3 runs `pacman-key --init` + `--populate archlinuxarm` and sets

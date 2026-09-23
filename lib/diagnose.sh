@@ -24,12 +24,24 @@ diagnose_ram_avail_mb() {
   printf '%s\n' "${samples[@]}" | sort -n | awk 'NR==2'
 }
 
+# See phase1_check_free_space in validate_env.sh for why -k, not -m.
 diagnose_storage_free_mb() {
-  df -m "$PREFIX" | awk 'NR==2 {print $4}'
+  df -k "$PREFIX" | awk 'NR==2 {print int($4/1024)}'
 }
 
+# `mount` is not a Termux package (termux-packages#14495/#10207 — even
+# though command-not-found metadata used to claim termux-tools provided
+# it, it never actually shipped a binary), and Termux deliberately never
+# puts /system/bin on $PATH (would shadow Termux's own tools) — so a bare
+# `mount` call is "command not found" on a real device, not just a
+# formatting mismatch. Fall back to the system binary directly; `|| true`
+# keeps a still-unparseable or missing mount from taking down Phase 2
+# under this project's `set -euo pipefail` (diagnostics are informational,
+# never a hard requirement — see compat_matrix.sh).
 diagnose_fs_type() {
-  mount | awk -v p="$PREFIX" '$0 ~ ("(^|[[:space:]])" p "([[:space:]]|$)") {print $5; exit}'
+  local mount_bin
+  mount_bin="$(command -v mount 2>/dev/null || echo /system/bin/mount)"
+  "$mount_bin" 2>/dev/null | awk -v p="$PREFIX" '$0 ~ ("(^|[[:space:]])" p "([[:space:]]|$)") {print $5; exit}' || true
 }
 
 diagnose_cpu_cores() {

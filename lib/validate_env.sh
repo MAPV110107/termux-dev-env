@@ -79,7 +79,13 @@ phase1_check_storage_permission() {
 
 phase1_check_free_space() {
   local avail_mb
-  avail_mb="$(df -m "$PREFIX" | awk 'NR==2 {print $4}')"
+  # `df -m` doesn't exist on a real Termux device: Termux's coreutils
+  # package deliberately excludes df ("df does not work either, let
+  # system binary prevail" — termux-packages/packages/coreutils/build.sh),
+  # so `df` on PATH is Android's own toybox, which only understands
+  # `-P`/`-k` (POSIX/1024-byte-block output), not GNU's `-m`. `-k` is the
+  # one flag both GNU coreutils and toybox agree on, so convert from KB.
+  avail_mb="$(df -k "$PREFIX" | awk 'NR==2 {print int($4/1024)}')"
   [ "$avail_mb" -ge "$TDE_MIN_FREE_MB" ] || \
     log_fatal "Only ${avail_mb}MB free, need at least ${TDE_MIN_FREE_MB}MB"
   log_info "Free space check passed: ${avail_mb}MB available"
