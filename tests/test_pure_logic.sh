@@ -176,6 +176,95 @@ proot-distro() {
 assert_fail "rootfs_ok fails when DisableSandbox is missing" phase3_rootfs_ok
 
 echo ""
+echo "=== install_rootfs.sh (regression: informe técnico 2026-09-22, Fase 3 loop) ==="
+proot-distro() {
+  case "$*" in
+    "list") echo "archarm" ;;
+    *) return 0 ;;
+  esac
+}
+assert_pass "phase3_container_exists detects an already-registered container" phase3_container_exists
+proot-distro() {
+  case "$*" in
+    "list") echo "archarm-other  aarch64  1.2G" ;;
+    *) return 0 ;;
+  esac
+}
+assert_fail "phase3_container_exists does not false-positive on a differently-named container" phase3_container_exists
+
+# The bug from the report: sed -i "/pattern/a text" exits 0 even when the
+# pattern never matches, so the old code could reach "installed and
+# verified" while DisableSandbox silently never landed. This locks in
+# that phase3_rootfs_ok actually notices when that happens.
+proot-distro() {
+  case "$*" in
+    "list") echo "archarm" ;;
+    *"test -d /etc/pacman.d/gnupg"*) return 0 ;;
+    *"grep -q ^DisableSandbox"*) return 1 ;;  # sed silently didn't insert it
+    *) return 0 ;;
+  esac
+}
+out="$(phase3_rootfs_ok 2>&1 || true)"
+assert_fail "rootfs_ok still fails when DisableSandbox silently didn't land" phase3_rootfs_ok
+case "$out" in
+  *"DisableSandbox missing"*) echo "  OK    post-check names DisableSandbox specifically, not a bare failure" ;;
+  *) echo "  FAIL  post-check did not name which sub-check failed"; FAILURES=$((FAILURES+1)) ;;
+esac
+
+# phase3_disable_pacman_sandbox must re-check the file, not trust sed's
+# exit code — confirm it retries and then fails loud (not a silent warn)
+# when the insert never actually takes.
+TDE_LOG_FILE="$TESTROOT/rootfs_sandbox.log"
+: > "$TDE_LOG_FILE"
+assert_fail "disable_pacman_sandbox goes fatal (not just warn) when the file never actually gets fixed" \
+  bash -c "
+    source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+    TDE_DISTRO_NAME=archarm
+    TDE_LOG_FILE='$TDE_LOG_FILE'
+    source '$SCRIPT_DIR/components/install_rootfs.sh'
+    # 'sh -c ...' is the edit attempt (mimics sed exiting 0 even though it
+    # inserted nothing, per the report); the separate 'grep -q' call is the
+    # verification, which must be what actually decides pass/fail here.
+    proot-distro() {
+      case \"\$*\" in
+        *'sh -c'*) return 0 ;;
+        *'grep -q ^DisableSandbox'*) return 1 ;;
+        *) return 0 ;;
+      esac
+    }
+    phase3_disable_pacman_sandbox
+  "
+ATTEMPTS_LOGGED="$(grep -c "still missing after attempt" "$TDE_LOG_FILE" 2>/dev/null || echo 0)"
+assert_eq "disable_pacman_sandbox actually retries 3 times before giving up" "3" "$ATTEMPTS_LOGGED"
+
+echo ""
+echo "=== install_rootfs.sh (already-registered container skips re-download) ==="
+DOWNLOAD_CALLED=0
+proot-distro() {
+  case "$*" in
+    "list") echo "archarm" ;;
+    "login archarm -- true") return 0 ;;
+    *) return 0 ;;
+  esac
+}
+assert_pass "install_rootfs_run does not attempt gpg/import/download when the container already exists" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/network.sh'
+  TDE_DISTRO_NAME=archarm
+  source '$SCRIPT_DIR/components/install_rootfs.sh'
+  proot-distro() {
+    case \"\$*\" in
+      \"list\") echo \"archarm\" ;;
+      *\"grep -q ^DisableSandbox\"*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase3_install_gpg_tool() { echo 'SHOULD NOT BE CALLED' >&2; exit 1; }
+  phase3_download_and_verify() { echo 'SHOULD NOT BE CALLED' >&2; exit 1; }
+  phase3_install_rootfs_run
+"
+
+echo ""
 echo "=== install_maintenance.sh (archbridge) ==="
 source "$SCRIPT_DIR/components/install_maintenance.sh"
 phase6_write_archbridge

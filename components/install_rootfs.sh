@@ -85,6 +85,14 @@ phase3_download_and_verify() {
   log_fatal "Could not download and verify the Arch Linux ARM rootfs from any mirror"
 }
 
+phase3_container_exists() {
+  proot-distro list 2>/dev/null | awk '{print $1}' | grep -qx "$TDE_DISTRO_NAME"
+}
+
+# Only called by phase3_install_rootfs_run's "container doesn't exist yet"
+# branch — see there for why the existence check lives one level up
+# instead of here (avoids downloading/verifying the tarball just to
+# discard it on an "already exists" error).
 phase3_install_rootfs() {
   log_info "Installing Arch Linux ARM into proot-distro as '$TDE_DISTRO_NAME'"
   proot-distro install "$TDE_ROOTFS_TARBALL" --name "$TDE_DISTRO_NAME" --architecture aarch64 || \
@@ -112,21 +120,58 @@ phase3_init_pacman_keyring() {
 # pacman's sandboxed download/hook execution needs Linux namespaces proot
 # doesn't provide — without this, pacman operations can hang or fail
 # inside the container.
+#
+# IMPORTANT: `sed -i "/pattern/a text" file` exits 0 even when "pattern"
+# never matches anything — it just silently does nothing. That means the
+# old "|| log_warn" here could never actually fire on the one failure
+# mode that matters (the insert silently not happening), regardless of
+# whether it said warn or fatal. So this re-checks the *actual file
+# content* after the edit, not the edit command's exit code, and retries
+# a few times before giving up — covers both a genuinely missing
+# [options] header and transient proot/login flakiness under memory
+# pressure.
 phase3_disable_pacman_sandbox() {
-  proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
-    grep -q "^DisableSandbox" /etc/pacman.conf || \
-    sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
-    sed -i "s/^#ParallelDownloads = .*/ParallelDownloads = 5/" /etc/pacman.conf
-  ' || log_warn "Could not configure pacman options in pacman.conf"
+  local attempt
+  for attempt in 1 2 3; do
+    proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+      grep -q "^DisableSandbox" /etc/pacman.conf || \
+      sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
+      sed -i "s/^#ParallelDownloads = .*/ParallelDownloads = 5/" /etc/pacman.conf
+    ' >>"$TDE_LOG_FILE" 2>&1
+
+    if proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null; then
+      log_info "DisableSandbox confirmed present in pacman.conf (attempt $attempt/3)"
+      return 0
+    fi
+    log_warn "DisableSandbox still missing after attempt $attempt/3 — retrying"
+    sleep 2
+  done
+  log_fatal "Could not get DisableSandbox into pacman.conf inside $TDE_DISTRO_NAME after 3 attempts. Manual fix: proot-distro login $TDE_DISTRO_NAME -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf — then re-run ./core.sh. See $TDE_LOG_FILE for the raw sed/login output."
 }
 
 # Post-condition, checked by core.sh before marking PHASE3_ROOTFS_INSTALLED —
 # the container is registered, logs in, AND the keyring/sandbox setup this
 # step is responsible for actually landed, not just "install exited zero".
+# Reports which specific sub-check failed instead of a bare pass/fail, so
+# a FATAL here (from core.sh) tells you what to fix without needing to
+# reproduce the three checks by hand.
 phase3_rootfs_ok() {
-  proot-distro list 2>/dev/null | grep -q "$TDE_DISTRO_NAME" && \
-    proot-distro login "$TDE_DISTRO_NAME" -- test -d /etc/pacman.d/gnupg 2>/dev/null && \
-    proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null
+  local ok=1
+
+  if ! phase3_container_exists; then
+    log_warn "post-check: container '$TDE_DISTRO_NAME' not listed by 'proot-distro list'"
+    ok=0
+  fi
+  if ! proot-distro login "$TDE_DISTRO_NAME" -- test -d /etc/pacman.d/gnupg 2>/dev/null; then
+    log_warn "post-check: /etc/pacman.d/gnupg missing — pacman keyring was not initialized (phase3_init_pacman_keyring)"
+    ok=0
+  fi
+  if ! proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null; then
+    log_warn "post-check: DisableSandbox missing from /etc/pacman.conf (phase3_disable_pacman_sandbox)"
+    ok=0
+  fi
+
+  [ "$ok" = "1" ]
 }
 
 phase3_install_rootfs_run() {
@@ -138,10 +183,20 @@ phase3_install_rootfs_run() {
   fi
 
   mkdir -p "$TDE_ROOTFS_TMPDIR"
-  phase3_install_gpg_tool
-  phase3_import_signing_key
-  phase3_download_and_verify
-  phase3_install_rootfs
+
+  # A container left behind by an earlier run that failed the post-condition
+  # (see phase3_rootfs_ok) already has a real rootfs on disk — re-downloading
+  # and re-verifying 1.5-2.5GB just to hit "already exists" from
+  # 'proot-distro install' would be pure waste. Repair its config instead.
+  if phase3_container_exists; then
+    log_info "Container '$TDE_DISTRO_NAME' already exists — skipping download/verify, repairing keyring and pacman config"
+  else
+    phase3_install_gpg_tool
+    phase3_import_signing_key
+    phase3_download_and_verify
+    phase3_install_rootfs
+  fi
+
   phase3_smoke_test_rootfs
   phase3_init_pacman_keyring
   phase3_disable_pacman_sandbox

@@ -88,6 +88,52 @@ redoes what didn't already pass its own verification. If a specific
 phase needs to be forced to redo even though it's marked done, use
 `./core.sh --reinstall=<phase number>`.
 
+## `proot-distro` says the `archarm` container "already exists"
+
+This can happen if a previous run got as far as creating the container
+but failed a later check in Phase 3 (for example, a `DisableSandbox`
+verification failure — see the next section). As of this version,
+`./core.sh` detects this itself and repairs the existing container
+in place instead of trying to reinstall it — just re-run `./core.sh`.
+
+If you hit the raw `proot-distro` error directly (e.g. running
+`proot-distro install` by hand), **do not run `proot-distro reset
+archarm`** — this project installs from a tarball, not an OCI image,
+and `reset` only works for OCI-based installs (`Reset is supported for
+OCI images only.`). The correct recovery is:
+
+```bash
+proot-distro remove archarm
+./core.sh
+```
+
+## Phase 3 says "Rootfs installed and verified" and then immediately fails FATAL
+
+This means `phase3_install_rootfs_run` finished, but the post-condition
+check (`phase3_rootfs_ok`) found something missing. As of this version
+the FATAL message names the specific sub-check that failed (container
+not listed / pacman keyring missing / `DisableSandbox` missing) instead
+of a bare failure — check the log line just above the `[FATAL]` for
+which one it was, then just re-run `./core.sh`: the container is
+detected as already existing and only the missing piece gets repaired,
+not a full reinstall.
+
+If it's specifically `DisableSandbox` and it keeps failing after
+several `./core.sh` runs, verify by hand:
+
+```bash
+proot-distro login archarm -- grep DisableSandbox /etc/pacman.conf
+```
+
+If that comes back empty, `/etc/pacman.conf` inside the container may
+not have the standard `[options]` header `sed` looks for. Insert it
+manually and re-run:
+
+```bash
+proot-distro login archarm -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf
+./core.sh
+```
+
 ## `pacman` hangs or fails with signature errors inside Arch
 
 Phase 3 runs `pacman-key --init` + `--populate archlinuxarm` and sets
