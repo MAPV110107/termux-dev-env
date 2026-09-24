@@ -86,7 +86,26 @@ phase3_download_and_verify() {
 }
 
 phase3_container_exists() {
-  proot-distro list 2>/dev/null | awk '{print $1}' | grep -qx "$TDE_DISTRO_NAME"
+  # Filesystem check first: this is what proot-distro itself uses to decide
+  # "already installed" (see command_install() upstream — it tests
+  # "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc"), and TDE_ROOTFS_PATH
+  # (lib/container_paths.sh) already points at that exact same directory.
+  # Unlike parsing 'proot-distro list', this can't be thrown off by column
+  # layout changes, a leading install-marker character, or ANSI color
+  # codes across proot-distro versions.
+  if [ -d "$TDE_ROOTFS_PATH/etc" ]; then
+    return 0
+  fi
+  # Fall back to the registry in case the rootfs was relocated or the
+  # directory layout ever changes upstream again. '-q' is proot-distro's
+  # own quiet/script-friendly listing mode: one alias per line, no table
+  # formatting to misparse.
+  if proot-distro list -q 2>/dev/null | grep -qx "$TDE_DISTRO_NAME"; then
+    return 0
+  fi
+  # Last resort: if login actually works, the container functionally
+  # exists regardless of what the filesystem check or list missed.
+  proot-distro login "$TDE_DISTRO_NAME" -- true >/dev/null 2>&1
 }
 
 # Only called by phase3_install_rootfs_run's "container doesn't exist yet"

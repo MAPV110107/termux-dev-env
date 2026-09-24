@@ -158,6 +158,36 @@ never blocks the install even if that still can't be parsed — the
 filesystem type is informational only, logged as `unknown` rather than
 failing Phase 2.
 
+## `proot-distro list` shows the container but Phase 3 still says "not listed", or the installer loops forever after a run that visually succeeded
+
+This was a false negative in the post-condition check itself, not a real
+problem with the rootfs. The old check parsed plain `proot-distro list`
+with `awk '{print $1}'`, assuming the container's alias is always the
+first column — which breaks on a distro/alias table header, an
+install-marker `*` prefix, or ANSI color codes, depending on the
+`proot-distro` version. As of this version, the check instead looks
+directly at the same directory `proot-distro` itself uses to decide
+"already installed" (`$PREFIX/var/lib/proot-distro/installed-rootfs/<alias>/etc`),
+with `proot-distro list -q` and a login smoke test as fallbacks — so it
+can no longer be thrown off by list-output formatting, and a container
+that's genuinely on disk is recognized immediately without needing to
+reinstall or edit `state.env` by hand.
+
+## The installer (or a later `archhealth`/`archupdate`) seems to hang with no error, after Phase 4 shell setup
+
+The container's `.zshrc` auto-attaches tmux on login
+(`tmux attach -t main || tmux new -s main`). Older versions of this
+snippet ran that unconditionally, which could take over the terminal on
+any of the many `proot-distro login --user <name> -- <command>` calls
+phases 4 through 6 make to run things inside the container as that user
+— not just a real interactive session. As of this version the snippet
+only fires for an actually-interactive shell (zsh's own `-o interactive`,
+which is off for a `-c command` invocation regardless of whether a TTY
+happens to be attached), so scripted logins are unaffected. If you're on
+an old clone and hit this, check `~/termux-dev-env/.git` is up to date,
+or edit the container's `~/.zshrc` by hand: wrap the `tmux attach ...`
+line in `if [[ -o interactive ]] && [ -t 0 ] && ...`.
+
 ## `pacman` hangs or fails with signature errors inside Arch
 
 Phase 3 runs `pacman-key --init` + `--populate archlinuxarm` and sets

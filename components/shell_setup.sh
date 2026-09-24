@@ -79,10 +79,19 @@ phase4_write_zshrc_extras() {
   zshrc="$(container_home "$username")/.zshrc"
   bashrc="$(container_home "$username")/.bashrc"
 
+  # tmux only auto-attaches for a genuinely interactive login (zsh's own
+  # "interactive" option, which is off for any "-c command" invocation
+  # regardless of whether a TTY happens to be attached to that process —
+  # e.g. proot-distro login --user <name> -- <cmd>, which every phase 4-6
+  # postcondition and setup step after this point uses to run things
+  # inside the container as this user). Without this guard tmux would try
+  # to take over the terminal on every one of those calls too, not just a
+  # real interactive session from setup_launcher.sh, and hang scripted
+  # steps that have no TTY loop to break out of it.
   idempotent_append "$zshrc" "runtime" '
 export PROOT_ACTIVE=1
 export PATH="$HOME/.local/bin:$PATH"
-if command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
+if [[ -o interactive ]] && [ -t 0 ] && command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
   tmux attach -t main 2>/dev/null || tmux new -s main
 fi'
 

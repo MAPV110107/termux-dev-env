@@ -51,6 +51,7 @@ mkdir -p "$HOME" "$PREFIX/bin"
 source "$SCRIPT_DIR/lib/error_handling.sh"
 source "$SCRIPT_DIR/lib/logging.sh"
 log_init >/dev/null
+source "$SCRIPT_DIR/lib/container_paths.sh"
 source "$SCRIPT_DIR/lib/kv.sh"
 export TDE_STATE_FILE="$TESTROOT/state.env"
 source "$SCRIPT_DIR/lib/state.sh"
@@ -156,9 +157,10 @@ done
 echo ""
 echo "=== install_rootfs.sh (phase3_rootfs_ok with pacman-key/DisableSandbox) ==="
 source "$SCRIPT_DIR/components/install_rootfs.sh"
+rm -rf "$TDE_ROOTFS_PATH"
+mkdir -p "$TDE_ROOTFS_PATH/etc"
 proot-distro() {
   case "$*" in
-    "list") echo "archarm" ;;
     *"test -d /etc/pacman.d/gnupg"*) return 0 ;;
     *"grep -q ^DisableSandbox"*) return 0 ;;
     *) return 0 ;;
@@ -167,7 +169,6 @@ proot-distro() {
 assert_pass "rootfs_ok passes when keyring+sandbox fix are both present" phase3_rootfs_ok
 proot-distro() {
   case "$*" in
-    "list") echo "archarm" ;;
     *"test -d /etc/pacman.d/gnupg"*) return 0 ;;
     *"grep -q ^DisableSandbox"*) return 1 ;;
     *) return 0 ;;
@@ -227,29 +228,52 @@ assert_pass "diagnose_fs_type does not abort the script (set -e) when mount is e
 "
 
 echo ""
-echo "=== install_rootfs.sh (regression: informe técnico 2026-09-22, Fase 3 loop) ==="
-proot-distro() {
-  case "$*" in
-    "list") echo "archarm" ;;
-    *) return 0 ;;
-  esac
-}
-assert_pass "phase3_container_exists detects an already-registered container" phase3_container_exists
-proot-distro() {
-  case "$*" in
-    "list") echo "archarm-other  aarch64  1.2G" ;;
-    *) return 0 ;;
-  esac
-}
-assert_fail "phase3_container_exists does not false-positive on a differently-named container" phase3_container_exists
+echo "=== install_rootfs.sh (phase3_container_exists — regression: informe 2026-09-23, fragile 'proot-distro list' parsing) ==="
+# Filesystem check is now primary, matching proot-distro's own definition
+# of "installed" (upstream command_install() tests exactly this path —
+# see lib/container_paths.sh for the verified INSTALLED_ROOTFS_DIR match).
+rm -rf "$TDE_ROOTFS_PATH"
+mkdir -p "$TDE_ROOTFS_PATH/etc"
+proot-distro() { echo "SHOULD NOT BE CALLED" >&2; return 1; }
+assert_pass "phase3_container_exists trusts the filesystem, never even calling proot-distro" phase3_container_exists
+rm -rf "$TDE_ROOTFS_PATH"
 
-# The bug from the report: sed -i "/pattern/a text" exits 0 even when the
-# pattern never matches, so the old code could reach "installed and
-# verified" while DisableSandbox silently never landed. This locks in
-# that phase3_rootfs_ok actually notices when that happens.
+# No rootfs on disk yet, but 'proot-distro list -q' (script-friendly mode:
+# one alias per line, no table/color formatting) reports it — still counts.
 proot-distro() {
   case "$*" in
-    "list") echo "archarm" ;;
+    "list -q") echo "archarm" ;;
+    *) return 1 ;;
+  esac
+}
+assert_pass "phase3_container_exists falls back to 'proot-distro list -q'" phase3_container_exists
+
+# The bug from the report: the *old* code parsed plain 'proot-distro list'
+# with awk '{print $1}', which breaks on a distro/alias table header, an
+# install-marker '*' prefix, or ANSI color codes. Simulate exactly that
+# kind of output on 'list' while 'list -q' (never consulted by the old
+# code) correctly has nothing — login still proves the container is real.
+proot-distro() {
+  case "$*" in
+    "list") echo "* archarm    installed"; return 0 ;;  # old code's $1 would be '*', not 'archarm'
+    "list -q") return 1 ;;
+    "login archarm -- true") return 0 ;;
+    *) return 1 ;;
+  esac
+}
+assert_pass "phase3_container_exists falls back to a working login when list -q misses" phase3_container_exists
+
+proot-distro() { return 1; }  # nothing on disk, not listed, login fails too
+assert_fail "phase3_container_exists correctly reports absence when nothing confirms it" phase3_container_exists
+
+# The bug from the informe técnico (2026-09-22): sed -i "/pattern/a text"
+# exits 0 even when the pattern never matches, so the old code could
+# reach "installed and verified" while DisableSandbox silently never
+# landed. This locks in that phase3_rootfs_ok actually notices that,
+# once the container itself is confirmed present on disk.
+mkdir -p "$TDE_ROOTFS_PATH/etc"
+proot-distro() {
+  case "$*" in
     *"test -d /etc/pacman.d/gnupg"*) return 0 ;;
     *"grep -q ^DisableSandbox"*) return 1 ;;  # sed silently didn't insert it
     *) return 0 ;;
@@ -261,6 +285,7 @@ case "$out" in
   *"DisableSandbox missing"*) echo "  OK    post-check names DisableSandbox specifically, not a bare failure" ;;
   *) echo "  FAIL  post-check did not name which sub-check failed"; FAILURES=$((FAILURES+1)) ;;
 esac
+rm -rf "$TDE_ROOTFS_PATH"
 
 # phase3_disable_pacman_sandbox must re-check the file, not trust sed's
 # exit code — confirm it retries and then fails loud (not a silent warn)
@@ -290,22 +315,16 @@ assert_eq "disable_pacman_sandbox actually retries 3 times before giving up" "3"
 
 echo ""
 echo "=== install_rootfs.sh (already-registered container skips re-download) ==="
-DOWNLOAD_CALLED=0
-proot-distro() {
-  case "$*" in
-    "list") echo "archarm" ;;
-    "login archarm -- true") return 0 ;;
-    *) return 0 ;;
-  esac
-}
 assert_pass "install_rootfs_run does not attempt gpg/import/download when the container already exists" bash -c "
   source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
   source '$SCRIPT_DIR/lib/network.sh'
+  PREFIX='$PREFIX'
   TDE_DISTRO_NAME=archarm
+  source '$SCRIPT_DIR/lib/container_paths.sh'
+  mkdir -p \"\$TDE_ROOTFS_PATH/etc\"
   source '$SCRIPT_DIR/components/install_rootfs.sh'
   proot-distro() {
     case \"\$*\" in
-      \"list\") echo \"archarm\" ;;
       *\"grep -q ^DisableSandbox\"*) return 0 ;;
       *) return 0 ;;
     esac
@@ -332,6 +351,29 @@ gpg() { return 0; }
 TDE_ROOTFS_URL_OVERRIDE="https://example.com/verified.tar.gz" assert_pass \
   "pinned override is used and verified when set" phase3_download_and_verify
 unset TDE_ROOTFS_URL_OVERRIDE
+
+echo ""
+echo "=== shell_setup.sh (regression: informe 2026-09-23, tmux auto-attach hangs scripted logins) ==="
+# zsh only sets its own "interactive" option off for a "-c command"
+# invocation — regardless of whether a TTY happens to be attached to
+# that process, which is why checking '-o interactive' (not just '-t 0')
+# is what actually distinguishes a real interactive login from one of
+# the many 'proot-distro login --user <name> -- <cmd>' calls every
+# phase 4-6 step makes to run something inside the container. '-o
+# interactive' is portable shell-option syntax (same semantics in bash),
+# so bash stands in here for a real container zsh, which this sandbox
+# doesn't have installed.
+source "$SCRIPT_DIR/lib/idempotent_append.sh"
+ZSHRC_TEST="$TESTROOT/zshrc_snippet_test"
+: > "$ZSHRC_TEST"
+idempotent_append "$ZSHRC_TEST" "runtime" '
+export PROOT_ACTIVE=1
+export PATH="$HOME/.local/bin:$PATH"
+if [[ -o interactive ]] && [ -t 0 ] && command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
+  tmux attach -t main 2>/dev/null || tmux new -s main
+fi'
+assert_pass "a scripted non-interactive shell -c login does not try to run tmux" \
+  bash -c "tmux() { echo 'TMUX SHOULD NOT RUN' >&2; exit 1; }; source '$ZSHRC_TEST'; true"
 
 echo ""
 echo "=== dev_toolchain.sh (makepkg guard before paru install) ==="
