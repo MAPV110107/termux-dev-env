@@ -15,17 +15,23 @@ Features a tuned **LazyVim** IDE with complete **LSP support** (Bash, Markdown, 
 ## ⚡ Quick Start (If you already have Termux)
 
 ```bash
-# 1. Update Termux packages & install git/curl
-pkg update -y && pkg install -y git curl
+# 1. Update & upgrade Termux packages (do this first, on its own —
+#    skipping the upgrade or bundling it with an install is the most
+#    common cause of "unable to install" errors on a fresh Termux)
+pkg update -y && pkg upgrade -y
 
-# 2. Clone and enter repo
+# 2. Install git & curl
+pkg install -y git curl
+
+# 3. Clone and enter repo
 git clone https://github.com/MAPV110107/termux-dev-env
 cd termux-dev-env
 chmod +x core.sh
 
-# 3. Run the installer (or preview with --dry-run)
+# 4. Run the installer (or preview with --dry-run)
 ./core.sh
 ```
+*(Press `Enter` to keep default configuration files if step 1 prompts for it. If step 1 reports repository/mirror changes, just run it a second time before continuing to step 2.)*
 
 ---
 
