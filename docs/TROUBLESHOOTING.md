@@ -188,6 +188,33 @@ an old clone and hit this, check `~/termux-dev-env/.git` is up to date,
 or edit the container's `~/.zshrc` by hand: wrap the `tmux attach ...`
 line in `if [[ -o interactive ]] && [ -t 0 ] && ...`.
 
+## `error: target not found: marksman` — Phase 4 toolchain install FATALs
+
+As of this version `marksman` is no longer a hard `pacman` dependency.
+Upstream Arch rebuilt it as an `x86_64`-specific package (it used to be
+architecture-independent, `any`), and Arch Linux ARM has no confirmed
+`aarch64` build of it — so a hard dependency on it could FATAL the
+entire toolchain phase over one Markdown LSP server. Mason.nvim's own
+`ensure_installed` list (see `lazyvim.sh`) already installs `marksman`
+itself the first time Neovim starts, independent of the system package
+manager, so nothing is lost. If you're on an old clone and still hit
+this, remove `marksman` from the `pacman -S` line in
+`components/dev_toolchain.sh` and re-run `./core.sh`.
+
+## `paru install failed` stops the whole toolchain phase
+
+As of this version a failed `paru-bin` build (common on low-RAM phones
+or a slow mirror — it still runs through `makepkg`, which can be slow
+or OOM even for a prebuilt package) is a warning, not a FATAL, and the
+toolchain post-check no longer requires `paru` to be present — only
+`gcc` and `git`, which is what the rest of the pipeline (LazyVim,
+treesitter, Mason) actually depends on. To install `paru` later:
+```bash
+proot-distro login archarm --user <your-username> -- sh -c \
+  'cd /tmp/paru-bin && makepkg -si --noconfirm'
+```
+(or `git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin` first if that directory is gone).
+
 ## `pacman` hangs or fails with signature errors inside Arch
 
 Phase 3 runs `pacman-key --init` + `--populate archlinuxarm` and sets
