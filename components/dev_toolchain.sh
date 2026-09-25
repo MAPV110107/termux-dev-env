@@ -61,9 +61,17 @@ phase4_install_paru() {
     return 1
   fi
   log_info "Installing paru-bin (prebuilt, no on-device Rust compile)"
-  # Non-blocking: paru-bin builds from a prebuilt binary but still runs
-  # through makepkg, which needs to fetch and verify it — exactly the kind
-  # of step that times out or OOMs on a low-RAM phone or a slow mirror.
+  # Build as the user with `makepkg -s` (no -i) — never invokes sudo at
+  # all — then install the resulting package as root directly via
+  # `pacman -U`, which needs no authentication under proot in the first
+  # place (plain `proot-distro login` without --user already IS root).
+  # `makepkg -si`'s internal `sudo pacman -U` was the actual failure
+  # point in the wild ("is not in the sudoers file" / password prompts
+  # even with a correct NOPASSWD rule) — sudo inside proot is unreliable
+  # (namespace/capability/PAM quirks), and this sidesteps needing it to
+  # work at all for this one step, without touching how sudo is used
+  # anywhere else (which still gets the NOPASSWD safety net from
+  # create_user.sh, for actual interactive use inside Arch).
   # None of the core toolchain (gcc, git, npm, LazyVim/Mason) depends on
   # paru existing, so losing it shouldn't cost the whole phase.
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- bash -c '
@@ -71,9 +79,19 @@ phase4_install_paru() {
     rm -rf /tmp/paru-bin
     git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin
     cd /tmp/paru-bin
-    makepkg -si --noconfirm
+    makepkg -s --noconfirm
   ' < /dev/null || {
-    log_warn "paru install failed — AUR packages won't be available, but the rest of the toolchain is unaffected. Retry later with: proot-distro login $TDE_DISTRO_NAME --user $username -- sh -c 'cd /tmp/paru-bin && makepkg -si --noconfirm'"
+    log_warn "paru build failed — AUR packages won't be available, but the rest of the toolchain is unaffected. Retry later with: proot-distro login $TDE_DISTRO_NAME --user $username -- sh -c 'cd /tmp/paru-bin && makepkg -s --noconfirm'"
+    return 1
+  }
+  proot-distro login "$TDE_DISTRO_NAME" -- bash -c '
+    set -e
+    shopt -s nullglob
+    pkgs=(/tmp/paru-bin/*.pkg.tar.*)
+    [ "${#pkgs[@]}" -gt 0 ]
+    pacman -U --noconfirm "${pkgs[@]}"
+  ' < /dev/null || {
+    log_warn "paru package built but install failed (pacman -U) — retry later with: proot-distro login $TDE_DISTRO_NAME -- sh -c 'pacman -U --noconfirm /tmp/paru-bin/*.pkg.tar.*'"
     return 1
   }
 }

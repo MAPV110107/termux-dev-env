@@ -215,6 +215,43 @@ proot-distro login archarm --user <your-username> -- sh -c \
 ```
 (or `git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin` first if that directory is gone).
 
+## `paru` build fails with "is not in the sudoers file" or a password prompt
+
+As of this version, `paru-bin` is built with `makepkg -s` (build only,
+never invokes `sudo`) as your user, then installed as root directly via
+`pacman -U` — `proot-distro login` without `--user` is already
+unauthenticated root, so this needs no sudo at all. sudo inside `proot`
+is genuinely unreliable (namespace/capability/PAM quirks can make it
+reject an otherwise-correct NOPASSWD rule), so this sidesteps the
+question entirely for this one step rather than depending on it working.
+If you're on an old clone and still hit this:
+```bash
+proot-distro login archarm --user <your-username> -- sh -c 'cd /tmp/paru-bin && makepkg -s --noconfirm'
+proot-distro login archarm -- sh -c 'pacman -U --noconfirm /tmp/paru-bin/*.pkg.tar.*'
+```
+
+## `.zshrc` missing / `sed: can't read ... .zshrc: No such file or directory`
+
+`phase4_install_ohmyzsh`'s old "already installed" check only looked for
+the `.oh-my-zsh/` directory — if a previous run's install was interrupted
+(network drop mid-clone) after that directory was created but before
+`.zshrc` was generated, every later run would see the directory, skip
+reinstalling, and leave `.zshrc` permanently missing, surfacing later as
+an opaque `sed` error in the theme/plugin steps. As of this version, the
+check requires both to exist (re-running the installer to repair just
+`.zshrc` if only that's missing), the installer writes a minimal
+fallback `.zshrc` if the upstream oh-my-zsh script still doesn't produce
+one, and the theme/plugin steps warn and skip cleanly instead of
+erroring if `.zshrc` is somehow still missing. To repair an existing
+install stuck in this state:
+```bash
+./core.sh --reinstall=4
+```
+or manually:
+```bash
+proot-distro login archarm --user <your-username> -- sh -c '[ -f ~/.zshrc ] || cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc'
+```
+
 ## `sudo` asks for a password I never set, or rejects it ("Sorry, try again")
 
 `useradd` never sets a password on its own, and as of this version

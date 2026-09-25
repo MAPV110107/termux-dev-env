@@ -515,6 +515,110 @@ assert_pass "a scripted non-interactive shell -c login does not try to run tmux"
   bash -c "tmux() { echo 'TMUX SHOULD NOT RUN' >&2; exit 1; }; source '$ZSHRC_TEST'; true"
 
 echo ""
+echo "=== shell_setup.sh (regression: reporte 2026-09-25, sed on missing .zshrc / oh-my-zsh idempotency bug) ==="
+# The bug: an interrupted previous oh-my-zsh install can leave .oh-my-zsh/
+# on disk without .zshrc ever having been created. The old idempotency
+# check only looked at .oh-my-zsh/, so every future run would see it,
+# skip reinstalling, and leave .zshrc missing forever — surfacing three
+# functions later as an opaque "sed: can't read ... No such file".
+assert_pass "install_ohmyzsh re-runs (does not skip) when .oh-my-zsh exists but .zshrc doesn't" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'; source '$SCRIPT_DIR/lib/network.sh'
+  export TDE_STATE_FILE='$TESTROOT/ohmyzsh_state.env'
+  export HOME='$TESTROOT/ohmyzsh_home'; TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/lib/container_paths.sh'
+  mkdir -p \"\$(container_home kattze)/.oh-my-zsh\"   # directory exists...
+  rm -f \"\$(container_home kattze)/.zshrc\"           # ...but .zshrc doesn't
+  source '$SCRIPT_DIR/components/shell_setup.sh'
+  INSTALLER_RAN=0
+  proot-distro() {
+    case \"\$*\" in
+      *'bash -c'*) INSTALLER_RAN=1; return 0 ;;
+      *'sh -c'*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase4_install_ohmyzsh
+  [ \"\$INSTALLER_RAN\" = 1 ]
+"
+assert_pass "enable_autosuggestions_plugin warns and skips instead of erroring on a missing .zshrc" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export TDE_STATE_FILE='$TESTROOT/ohmyzsh_state2.env'
+  export HOME='$TESTROOT/ohmyzsh_home2'; TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/lib/container_paths.sh'
+  mkdir -p \"\$(dirname \"\$(container_home kattze)\")\"
+  source '$SCRIPT_DIR/components/shell_setup.sh'
+  phase4_enable_autosuggestions_plugin
+"
+assert_pass "set_zsh_theme warns and skips instead of erroring on a missing .zshrc" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export TDE_STATE_FILE='$TESTROOT/ohmyzsh_state3.env'
+  export HOME='$TESTROOT/ohmyzsh_home3'; TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/lib/container_paths.sh'
+  mkdir -p \"\$(dirname \"\$(container_home kattze)\")\"
+  source '$SCRIPT_DIR/components/shell_setup.sh'
+  phase4_set_zsh_theme
+"
+assert_fail "shell_ok reports which sub-check failed instead of a bare failure" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export TDE_STATE_FILE='$TESTROOT/ohmyzsh_state4.env'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/shell_setup.sh'
+  proot-distro() { case \"\$*\" in *'getent passwd'*) echo 'kattze:x:1000:1000::/home/kattze:/bin/bash' ;; esac; }
+  out=\"\$(phase4_shell_ok 2>&1 || true)\"
+  grep -q 'not /usr/bin/zsh' <<< \"\$out\"
+  phase4_shell_ok
+"
+
+echo ""
+echo "=== dev_toolchain.sh (paru install builds then installs as root, never needs sudo; regression: reporte 2026-09-25) ==="
+assert_pass "install_paru builds with makepkg -s (no -i) as the user" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/dev_toolchain.sh'
+  BUILD_CMD=''
+  proot-distro() {
+    case \"\$*\" in
+      *'command -v paru'*) return 1 ;;
+      *'command -v makepkg'*) return 0 ;;
+      *'--user'*'bash -c'*) BUILD_CMD=\"\${*: -1}\"; return 0 ;;
+      *'bash -c'*) return 0 ;;  # the root install-as-pacman-U step
+      *) return 0 ;;
+    esac
+  }
+  phase4_install_paru
+  ! grep -q -- '-si ' <<< \"\$BUILD_CMD\" && grep -q -- '-s --noconfirm' <<< \"\$BUILD_CMD\"
+"
+assert_pass "install_paru installs the built package as root via pacman -U, not sudo" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/dev_toolchain.sh'
+  ROOT_INSTALL_CMD=''
+  proot-distro() {
+    case \"\$*\" in
+      *'command -v paru'*) return 1 ;;
+      *'command -v makepkg'*) return 0 ;;
+      *'--user'*'bash -c'*) return 0 ;;  # build step, as the user
+      *'bash -c'*) ROOT_INSTALL_CMD=\"\${*: -1}\"; return 0 ;;  # root install step
+      *) return 0 ;;
+    esac
+  }
+  phase4_install_paru
+  grep -q 'pacman -U' <<< \"\$ROOT_INSTALL_CMD\" && ! grep -q sudo <<< \"\$ROOT_INSTALL_CMD\"
+"
+
+echo ""
 echo "=== dev_toolchain.sh (makepkg guard before paru install; regression: Grok analysis 2026-09-24, marksman/paru hard-fail) ==="
 assert_fail "install_paru fails (non-fatal) when makepkg is missing" bash -c "
   source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
