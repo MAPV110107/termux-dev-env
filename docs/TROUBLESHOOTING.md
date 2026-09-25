@@ -215,6 +215,31 @@ proot-distro login archarm --user <your-username> -- sh -c \
 ```
 (or `git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin` first if that directory is gone).
 
+## `sudo` asks for a password I never set, or rejects it ("Sorry, try again")
+
+`useradd` never sets a password on its own, and as of this version
+`wheel` gets passwordless sudo (`NOPASSWD: ALL` in
+`/etc/sudoers.d/wheel-nopasswd`) — so `sudo` normally shouldn't prompt
+at all. If it does, and you're on an install from before this version,
+your account genuinely has no valid password (the account was locked),
+so no password you type will work. As of this version, user creation
+prompts you to set one as a fallback (used only if the NOPASSWD rule
+doesn't apply for some reason — it does **not** affect opening Arch
+from Termux, which never checks a password either way), and the
+sudoers.d write is verified with `visudo -c` so a malformed rule FATALs
+immediately instead of silently not applying. On an older install, fix
+it directly:
+```bash
+proot-distro login archarm -- passwd <your-username>
+```
+That's a real root shell (no password needed to get it), so it works
+regardless of the sudo issue. To check why NOPASSWD isn't applying:
+```bash
+proot-distro login archarm -- cat /etc/sudoers.d/wheel-nopasswd
+proot-distro login archarm -- visudo -c
+proot-distro login archarm -- id <your-username>   # confirm you're actually in the wheel group
+```
+
 ## `pacman` fails with "Resolving timed out" or mirror timeouts inside Arch
 
 Mobile connections (DNS instability, CGNAT, rate-limiting) can make the

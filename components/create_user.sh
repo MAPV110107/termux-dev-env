@@ -34,11 +34,47 @@ phase3_ensure_sudo_installed() {
     log_fatal "Could not install sudo/zsh inside $TDE_DISTRO_NAME"
 }
 
+# Safety net, not the primary mechanism: wheel already gets passwordless
+# sudo below, and 'proot-distro login --user' (both the interactive
+# launcher and every scripted phase 4-6 step) never checks a password at
+# all — proot execs directly as that UID, so this does not make opening
+# Arch from Termux need a password either. This exists only so the
+# account isn't left completely unauthenticatable (useradd never sets
+# one on its own) if the NOPASSWD sudoers rule below doesn't take effect
+# for some reason (seen in the wild — sudo still prompted despite it).
+# Runs passwd's own interactive prompt directly rather than _prompt (which
+# echoes input to the screen) so the password is never visible or passed
+# through a shell variable.
+phase3_set_user_password() {
+  local username="$1" status
+  status="$(proot-distro login "$TDE_DISTRO_NAME" -- passwd -S "$username" 2>/dev/null | awk '{print $2}')"
+  if [ "$status" = "P" ]; then
+    log_info "Password already set for '$username', skipping"
+    return 0
+  fi
+
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] would prompt to set a login password for '$username' (sudo safety net only — not needed to open Arch from Termux)"
+    return 0
+  fi
+  if [ ! -t 0 ]; then
+    log_warn "No interactive terminal — skipping password prompt for '$username'. Set one later with: proot-distro login $TDE_DISTRO_NAME -- passwd $username"
+    return 0
+  fi
+
+  echo ""
+  echo "Set a login password for '$username' (used only as a sudo fallback —"
+  echo "wheel already has passwordless sudo, and opening Arch from Termux"
+  echo "never needs this password either):"
+  proot-distro login "$TDE_DISTRO_NAME" -- passwd "$username" || \
+    log_warn "Could not set a password for '$username' — if passwordless sudo doesn't work either, you'll be locked out of sudo until you set one: proot-distro login $TDE_DISTRO_NAME -- passwd $username"
+}
+
 phase3_create_user_run() {
   log_info "=== Phase 3, step 2: user creation ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would prompt for a username, useradd -m -G wheel -s /usr/bin/zsh inside $TDE_DISTRO_NAME, install sudo/zsh, enable passwordless sudo for wheel"
+    log_info "[dry-run] would prompt for a username, useradd -m -G wheel -s /usr/bin/zsh inside $TDE_DISTRO_NAME, install sudo/zsh, prompt for a password (sudo fallback only), enable passwordless sudo for wheel"
     return 0
   fi
 
@@ -60,9 +96,24 @@ phase3_create_user_run() {
       log_fatal "useradd failed for '$username'"
   fi
 
-  proot-distro login "$TDE_DISTRO_NAME" -- sh -c \
-    "echo '%wheel ALL=(ALL) NOPASSWD: ALL' > /etc/sudoers.d/wheel-nopasswd && chown root:root /etc/sudoers.d/wheel-nopasswd && chmod 0440 /etc/sudoers.d/wheel-nopasswd" || \
-    log_fatal "Could not configure passwordless sudo for wheel"
+  phase3_set_user_password "$username"
+
+  # @includedir defensively re-added in case this sudo package's default
+  # /etc/sudoers doesn't ship it (seen on some distros/base installs) —
+  # without it, sudoers.d is silently never read at all, no error either
+  # way. visudo -c at the end validates the whole config (main file +
+  # every sudoers.d include) and fails loud on a syntax problem, instead
+  # of leaving a rule that looks written but sudo silently never applies.
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+    set -e
+    grep -qE "^[#@]includedir[[:space:]]+/etc/sudoers\.d" /etc/sudoers || \
+      echo "@includedir /etc/sudoers.d" >> /etc/sudoers
+    echo "%wheel ALL=(ALL) NOPASSWD: ALL" > /etc/sudoers.d/wheel-nopasswd
+    chown root:root /etc/sudoers.d/wheel-nopasswd
+    chmod 0440 /etc/sudoers.d/wheel-nopasswd
+    visudo -c
+  ' >>"$TDE_LOG_FILE" 2>&1 || \
+    log_fatal "Could not configure passwordless sudo for wheel — visudo reported a syntax problem, see $TDE_LOG_FILE. A password was set above as a fallback: proot-distro login $TDE_DISTRO_NAME -- passwd $username"
 
   log_info "User '$username' created with zsh shell and passwordless sudo (wheel group)"
 }
