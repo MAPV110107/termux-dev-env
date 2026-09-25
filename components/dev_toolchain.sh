@@ -8,8 +8,12 @@ TDE_DEV_TOOLCHAIN_LOADED=1
 
 phase4_sync_and_install_toolchain() {
   log_info "Syncing pacman and installing base toolchain and language runtimes"
-  proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
-    log_fatal "pacman -Syu failed inside $TDE_DISTRO_NAME"
+  # Mobile networks drop mid-request often enough that a single pacman
+  # attempt isn't reliable — same reasoning as the rootfs tarball
+  # download (lib/network.sh), just applied to pacman itself.
+  retry_with_backoff 3 15 \
+    proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
+    log_fatal "pacman -Syu failed inside $TDE_DISTRO_NAME after 3 attempts — likely a network/mirror issue (mirror.archlinuxarm.org timeouts are common on mobile connections), not a package problem. See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
   # marksman deliberately NOT in this list: it's built by upstream Arch as
   # an x86_64-specific package (not "any" — its own package page confirms
   # this changed from "any" to "x86_64" between the 20251125-1 and
@@ -20,9 +24,10 @@ phase4_sync_and_install_toolchain() {
   # (see lazyvim.sh's ensure_installed) already installs marksman itself
   # on first Neovim launch, independent of the system package manager, so
   # nothing is lost by not hard-depending on it here.
-  proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
+  retry_with_backoff 3 15 \
+    proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
     base-devel git tree-sitter-cli nodejs npm python python-pip clang rust go nano wget curl || \
-    log_fatal "Toolchain package install failed"
+    log_fatal "Toolchain package install failed after 3 attempts — likely a network/mirror issue, not a package problem (these packages exist on Arch Linux ARM aarch64). See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
 }
 
 phase4_prompt_git_identity() {

@@ -193,11 +193,49 @@ phase3_rootfs_ok() {
   [ "$ok" = "1" ]
 }
 
+# Best-effort, non-blocking: gives pacman fallback mirrors so one bad
+# mobile-network DNS resolution isn't a hard stop. Reuses TDE_ARM_MIRRORS
+# (the same list already trusted for the tarball download above) instead
+# of introducing new, unverified mirror hostnames — Arch Linux ARM's own
+# tarball ships with a single GeoIP-based mirror
+# (mirror.archlinuxarm.org), which is exactly the single point of
+# failure behind "Resolving timed out" errors on flaky connections.
+phase3_write_pacman_mirrorlist() {
+  local mirror line mirrorlist_body
+  mirrorlist_body=""
+  for mirror in "${TDE_ARM_MIRRORS[@]}"; do
+    mirrorlist_body="${mirrorlist_body}Server = http://${mirror}/\$arch/\$repo
+"
+  done
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c "cat > /etc/pacman.d/mirrorlist << 'MIRROREOF'
+${mirrorlist_body}MIRROREOF" >>"$TDE_LOG_FILE" 2>&1 || {
+    log_warn "Could not write a multi-mirror pacman mirrorlist — pacman will fall back to the tarball's default single mirror"
+    return 0
+  }
+  log_info "pacman mirrorlist set to ${#TDE_ARM_MIRRORS[@]} mirrors (${TDE_ARM_MIRRORS[*]})"
+}
+
+# Best-effort, non-blocking: this rootfs never boots its own kernel — it
+# always runs under the host Android kernel via proot — so linux-aarch64
+# is pure wasted bandwidth (a large package, directly adding to timeout
+# exposure) that also triggers mkinitcpio's autodetect hook scanning
+# /sys/devices, which fails under proot (no real device nodes) and
+# produces the "Permission denied" / "missing firmware" log noise users
+# have reported. Ignoring it addresses that at the source instead of
+# just filtering the resulting warnings.
+phase3_ignore_kernel_pkg() {
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+    grep -q "^IgnorePkg" /etc/pacman.conf || \
+    sed -i "/^\[options\]/a IgnorePkg   = linux-aarch64" /etc/pacman.conf
+  ' >>"$TDE_LOG_FILE" 2>&1 || \
+    log_warn "Could not set IgnorePkg for linux-aarch64 — pacman -Syu may pull the kernel and print mkinitcpio noise (harmless, see TROUBLESHOOTING.md)"
+}
+
 phase3_install_rootfs_run() {
   log_info "=== Phase 3, step 1: rootfs install ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install gnupg, download+GPG-verify the aarch64 rootfs (TDE_ROOTFS_URL_OVERRIDE if set, else ${TDE_ARM_MIRRORS[*]}), run 'proot-distro install', smoke test, initialize pacman keyring, disable pacman sandbox"
+    log_info "[dry-run] would install gnupg, download+GPG-verify the aarch64 rootfs (TDE_ROOTFS_URL_OVERRIDE if set, else ${TDE_ARM_MIRRORS[*]}), run 'proot-distro install', smoke test, initialize pacman keyring, disable pacman sandbox, write a multi-mirror pacman mirrorlist, ignore the linux-aarch64 kernel package"
     return 0
   fi
 
@@ -219,5 +257,7 @@ phase3_install_rootfs_run() {
   phase3_smoke_test_rootfs
   phase3_init_pacman_keyring
   phase3_disable_pacman_sandbox
+  phase3_write_pacman_mirrorlist
+  phase3_ignore_kernel_pkg
   log_info "Rootfs installed and verified"
 }

@@ -215,6 +215,43 @@ proot-distro login archarm --user <your-username> -- sh -c \
 ```
 (or `git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin` first if that directory is gone).
 
+## `pacman` fails with "Resolving timed out" or mirror timeouts inside Arch
+
+Mobile connections (DNS instability, CGNAT, rate-limiting) can make the
+tarball's default single GeoIP mirror (`mirror.archlinuxarm.org`) time
+out mid-transaction, especially for large Phase 4 packages like `rust`,
+`clang`, or `go`. As of this version, Phase 3 writes a multi-mirror
+`/etc/pacman.d/mirrorlist` (reusing the same mirrors already trusted for
+the rootfs tarball download) and both `pacman` calls in Phase 4 retry
+up to 3 times with backoff — so a single transient timeout no longer
+takes the whole toolchain phase down. If it still fails after 3
+attempts, it's worth checking your connection or switching networks
+(mobile data vs. Wi-Fi) before re-running `./core.sh` — pacman resumes
+partially-downloaded packages on its own, so nothing already fetched is
+wasted. To check or fix the mirrorlist by hand:
+```bash
+proot-distro login archarm -- cat /etc/pacman.d/mirrorlist
+proot-distro login archarm -- bash -c '
+  echo "Server = http://mirror.archlinuxarm.org/\$arch/\$repo" > /etc/pacman.d/mirrorlist
+  pacman -Syyu --noconfirm
+'
+```
+
+## `mkinitcpio` warnings ("Permission denied", "missing firmware") during Phase 4
+
+This container never boots its own kernel — it always runs under the
+host Android kernel via `proot` — so these warnings from installing
+`linux-aarch64` (pulled in as a `base-devel`/toolchain dependency) are
+expected noise, not a real problem: `autodetect`'s `/sys/devices` scan
+fails under `proot` (no real device nodes), and most listed firmware is
+for server/RAID hardware nothing here has. As of this version, Phase 3
+sets `IgnorePkg = linux-aarch64` in `pacman.conf` so `pacman -Syu`
+skips the kernel package entirely — avoiding both the noise and the
+wasted bandwidth of downloading a kernel this environment never uses.
+This is best-effort (a `log_warn`, not fatal, if it can't be set), so if
+you still see this noise it's harmless either way — let `mkinitcpio`
+finish, it doesn't block package installation.
+
 ## `pacman` hangs or fails with signature errors inside Arch
 
 Phase 3 runs `pacman-key --init` + `--populate archlinuxarm` and sets
