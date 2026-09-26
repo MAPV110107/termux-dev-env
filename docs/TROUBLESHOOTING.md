@@ -252,6 +252,34 @@ or manually:
 proot-distro login archarm --user <your-username> -- sh -c '[ -f ~/.zshrc ] || cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc'
 ```
 
+## `.zshrc` still reads as missing even after the "writing a minimal fallback" warning, or theme/plugin steps keep skipping
+
+An earlier version of this project's fix for the ".zshrc missing" issue
+(see the section below) only made the *check* safe — it still compared
+a direct host-side path into the rootfs
+(`$PREFIX/var/lib/proot-distro/installed-rootfs/<distro>/home/<user>/.zshrc`)
+against what oh-my-zsh had just written *from inside* `proot`. In the
+wild, oh-my-zsh's own installer reported success and explicitly printed
+"adding it to /home/&lt;user&gt;/.zshrc", yet that host-side path still read
+as not existing immediately afterward — so every later step (theme,
+plugin, the post-condition) kept treating a real, present `.zshrc` as
+missing. As of this version, every `.zshrc` check and edit in
+`shell_setup.sh` (`phase4_install_ohmyzsh`, `phase4_enable_autosuggestions_plugin`,
+`phase4_set_zsh_theme`, `phase4_write_zshrc_extras`, `phase4_shell_ok`)
+goes through `proot-distro login --user <you> -- test`/`grep`/`sed`
+instead — the same access path the file was actually written through —
+which matches how every other functional check in this project already
+works (`phase3_rootfs_ok`, `phase4_toolchain_ok`, etc.).
+
+**This same class of issue may still affect other host-side path
+constructions** built from `container_home` in `components/telecom.sh`
+(`.aria2`, `downloads`), `components/lazyvim.sh` (`.config/nvim` — several
+functions), and `components/dev_toolchain.sh` (`.config/paru`) — none of
+these have been reported as broken, so they haven't been changed, but if
+you hit a similarly inexplicable "file missing right after something
+just wrote it" in one of those areas, this is the pattern to suspect.
+Report it and it'll get the same fix.
+
 ## `sudo` asks for a password I never set, or rejects it ("Sorry, try again")
 
 `useradd` never sets a password on its own, and as of this version
