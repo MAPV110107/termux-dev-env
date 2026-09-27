@@ -143,38 +143,13 @@ fi'
 
   username="$(state_get ARCH_USERNAME)"
 
-  # Appended and de-duplicated from inside the container (not
-  # idempotent_append's usual host-side path into the rootfs) — see
-  # phase4_install_ohmyzsh's comment above for why: a host-side path did
-  # not reliably reflect what had just been written from inside proot in
-  # the wild. Mirrors idempotent_append's own marker format and
-  # strip-old-block-then-append logic, just run as the user via login
-  # instead of directly against the host path, with the block content
-  # passed through --env so no nested-quoting mess is needed to get a
-  # multi-line, dollar-sign-and-bracket-heavy shell snippet through intact.
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" \
-    --env TDE_BLOCK="$runtime_block" -- sh -c '
-    f=~/.zshrc
-    start="# >>> termux-dev-env: runtime >>>"
-    end="# <<< termux-dev-env: runtime <<<"
-    touch "$f"
-    if grep -qF -- "$start" "$f"; then
-      awk -v s="$start" -v e="$end" "\$0==s{skip=1} !skip{print} \$0==e{skip=0}" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    fi
-    { echo ""; echo "$start"; printf "%s\n" "$TDE_BLOCK"; echo "$end"; } >> "$f"
-  ' || log_warn "Could not append PROOT_ACTIVE/tmux snippet to .zshrc"
-
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" \
-    --env TDE_BLOCK="$bashrc_block" -- sh -c '
-    f=~/.bashrc
-    start="# >>> termux-dev-env: runtime >>>"
-    end="# <<< termux-dev-env: runtime <<<"
-    touch "$f"
-    if grep -qF -- "$start" "$f"; then
-      awk -v s="$start" -v e="$end" "\$0==s{skip=1} !skip{print} \$0==e{skip=0}" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
-    fi
-    { echo ""; echo "$start"; printf "%s\n" "$TDE_BLOCK"; echo "$end"; } >> "$f"
-  ' || log_warn "Could not append PROOT_ACTIVE/zsh-exec snippet to .bashrc"
+  # Appended and de-duplicated from inside the container, not against a
+  # host-side path into the rootfs — see phase4_install_ohmyzsh's comment
+  # above and lib/idempotent_append.sh for why.
+  idempotent_append_container "$TDE_DISTRO_NAME" "$username" ".zshrc" "runtime" "$runtime_block" || \
+    log_warn "Could not append PROOT_ACTIVE/tmux snippet to .zshrc"
+  idempotent_append_container "$TDE_DISTRO_NAME" "$username" ".bashrc" "runtime" "$bashrc_block" || \
+    log_warn "Could not append PROOT_ACTIVE/zsh-exec snippet to .bashrc"
 }
 
 phase4_shell_setup_run() {

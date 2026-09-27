@@ -97,11 +97,15 @@ phase4_install_paru() {
 }
 
 phase4_write_paru_conf() {
-  local username conf_dir
+  local username
   username="$(state_get ARCH_USERNAME)"
-  conf_dir="$(container_home "$username")/.config/paru"
-  mkdir -p "$conf_dir"
-  cat > "$conf_dir/paru.conf" << 'EOF'
+  # Written from inside the container (not a host-side path via
+  # container_home) — see docs/TROUBLESHOOTING.md's ".zshrc missing"
+  # section for why.
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c '
+    mkdir -p ~/.config/paru
+  ' && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    tee ~/.config/paru/paru.conf > /dev/null << 'EOF' || log_warn "Could not write paru.conf (non-essential — paru works with its defaults either way)"
 [options]
 BottomUp
 SkipReview

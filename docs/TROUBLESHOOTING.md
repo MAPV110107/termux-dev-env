@@ -215,6 +215,27 @@ proot-distro login archarm --user <your-username> -- sh -c \
 ```
 (or `git clone --depth 1 https://aur.archlinux.org/paru-bin.git /tmp/paru-bin` first if that directory is gone).
 
+## After a failed `paru` install, retrying from `/tmp/paru-bin` says the directory is gone
+
+`phase5_cleanup` used to delete `/tmp/paru-bin` whenever the core
+toolchain looked fine (`gcc`/`git` present) — but that's true regardless
+of whether `paru`'s own build actually succeeded, since paru became
+non-blocking. As of this version, that cleanup only runs once `paru` is
+confirmed actually installed, so a failed build leaves the directory in
+place for the manual retry command below (or in the previous section)
+to actually work.
+
+## `archhealth`/`archdiag` print "command not found" for a self-heal step involving fonts, telecom, or a retried package install
+
+Older versions of the maintenance scripts didn't source
+`components/telecom.sh`, `components/nerdfonts.sh`, `lib/network.sh`
+(`retry_with_backoff`), or `lib/idempotent_append.sh`
+(`idempotent_append_container`) — even though `phase5_self_heal` (which
+both commands run) can call into all of them. As of this version all
+four are sourced. If you're on an old clone and hit this, `git pull`
+(or re-run `./core.sh --reinstall=6` to regenerate the maintenance
+commands from the current source).
+
 ## `paru` build fails with "is not in the sudoers file" or a password prompt
 
 As of this version, `paru-bin` is built with `makepkg -s` (build only,
@@ -252,6 +273,29 @@ or manually:
 proot-distro login archarm --user <your-username> -- sh -c '[ -f ~/.zshrc ] || cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc'
 ```
 
+## `E492: Not an editor command: TSInstallSync`, or `[FATAL] LazyVim did not pass its post-condition check`
+
+`TSInstallSync` belonged to `nvim-treesitter`'s old (now frozen)
+`master` branch. LazyVim's starter pins `nvim-treesitter` to `main`,
+which removed the `TSInstall*` ex-commands entirely in its leaner
+rewrite — using the old command is exactly this error, and it can drag
+down the plugin-loaded count `phase4_lazyvim_ok` checks along with it.
+As of this version, parser pre-install uses `main`'s actual Lua API
+(`require('nvim-treesitter').install({...}):wait(300000)`) instead. If
+you're on an old clone and still hit this:
+```bash
+proot-distro login archarm --user <your-username> -- \
+  nvim --headless -c "lua require('nvim-treesitter').install({'bash','lua','python'}):wait(300000)" -c "qa"
+```
+(swap in whichever languages you use; see `components/lazyvim.sh` for
+the full list this project installs by default).
+
+Separately, `phase4_lazyvim_ok`'s options.lua check and
+`phase4_verify_treesitter_cc`'s C-compiler detection now go through the
+container (not a host-side path, and not grepping `:checkhealth`'s own
+UI text, which is free to change across `nvim-treesitter` versions) —
+see the next section for why that pattern matters generally.
+
 ## `.zshrc` still reads as missing even after the "writing a minimal fallback" warning, or theme/plugin steps keep skipping
 
 An earlier version of this project's fix for the ".zshrc missing" issue
@@ -271,14 +315,26 @@ instead — the same access path the file was actually written through —
 which matches how every other functional check in this project already
 works (`phase3_rootfs_ok`, `phase4_toolchain_ok`, etc.).
 
-**This same class of issue may still affect other host-side path
-constructions** built from `container_home` in `components/telecom.sh`
-(`.aria2`, `downloads`), `components/lazyvim.sh` (`.config/nvim` — several
-functions), and `components/dev_toolchain.sh` (`.config/paru`) — none of
-these have been reported as broken, so they haven't been changed, but if
-you hit a similarly inexplicable "file missing right after something
-just wrote it" in one of those areas, this is the pattern to suspect.
-Report it and it'll get the same fix.
+This is now also fixed in `components/lazyvim.sh` (LazyVim starter
+clone, its idempotency check, `options.lua`/`keymaps.lua`/
+`autocmds.lua`/`lsp.lua`/`terminal.lua`/`file-explorer.lua`, and the
+`phase4_lazyvim_ok` post-condition) and `components/dev_toolchain.sh`'s
+`paru.conf` — all previously used the same host-side `container_home`
+path pattern. The LazyVim starter clone was the riskiest of these: its
+old idempotency check being a host-side false negative would fall
+through to `rm -rf`-ing the whole nvim config and re-cloning from
+scratch on every single run, silently destroying any customization to
+your own LazyVim setup. `lib/idempotent_append.sh` now has a
+container-side counterpart (`idempotent_append_container`) that these
+all use instead of a host-side path, so this doesn't need reinventing
+per call site.
+
+**This same class of issue may still affect** the one remaining
+host-side path construction from `container_home`, in
+`components/telecom.sh` (`.aria2/`, `downloads/`) — not reported as
+broken, so not changed yet, but if you hit a similarly inexplicable
+"file missing right after something just wrote it" there, this is the
+pattern to suspect. Report it and it'll get the same fix.
 
 ## `sudo` asks for a password I never set, or rejects it ("Sorry, try again")
 

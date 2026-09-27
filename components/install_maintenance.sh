@@ -41,15 +41,19 @@ cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not fou
 source lib/error_handling.sh
 source lib/logging.sh
 log_init
+source lib/network.sh
 source lib/kv.sh
 source lib/state.sh
 source lib/container_paths.sh
+source lib/idempotent_append.sh
 source components/install_rootfs.sh
 source components/create_user.sh
 source components/setup_launcher.sh
 source components/dev_toolchain.sh
 source components/shell_setup.sh
 source components/lazyvim.sh
+source components/telecom.sh
+source components/nerdfonts.sh
 source lib/generate_report.sh
 source lib/verify_functional.sh
 
@@ -78,8 +82,10 @@ cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not fou
 source lib/error_handling.sh
 source lib/logging.sh
 log_init
+source lib/network.sh
 source lib/kv.sh
 source lib/state.sh
+source lib/idempotent_append.sh
 
 if [ "${1:-}" != "--quick" ]; then
   echo "=== Hardware/environment: then vs now ==="
@@ -117,6 +123,8 @@ source components/setup_launcher.sh
 source components/dev_toolchain.sh
 source components/shell_setup.sh
 source components/lazyvim.sh
+source components/telecom.sh
+source components/nerdfonts.sh
 source lib/generate_report.sh
 source lib/verify_functional.sh
 phase5_run_audit
@@ -140,6 +148,11 @@ set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
 [ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
 . "$CONF"
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
+source lib/error_handling.sh
+source lib/logging.sh
+log_init
+source lib/network.sh
 
 SNAP_DIR="$HOME/.config/termux-dev-env/snapshots"
 mkdir -p "$SNAP_DIR"
@@ -153,7 +166,14 @@ if [ "${1:-}" = "--with-backup" ]; then
 fi
 
 echo "Updating system packages..."
-proot-distro login "$ARCH_DISTRO_ALIAS" -- pacman -Syu --noconfirm
+# Same reasoning as phase4_sync_and_install_toolchain — mobile networks
+# drop mid-request often enough that a single pacman attempt isn't
+# reliable, and archupdate hits the exact same mirror.archlinuxarm.org
+# timeout mode as the initial install would.
+retry_with_backoff 3 15 proot-distro login "$ARCH_DISTRO_ALIAS" -- pacman -Syu --noconfirm || {
+  echo "pacman -Syu failed after 3 attempts — likely a network/mirror issue, see docs/TROUBLESHOOTING.md's 'mirror timeouts' section"
+  exit 1
+}
 
 echo ""
 echo "Re-checking system health after update..."

@@ -105,6 +105,38 @@ assert_eq "idempotent with -- comment prefix" "1" "$(grep -c -- 'opts >>>' "$lf"
 assert_eq "no bare # lines leak into a lua file" "0" "$(grep -c '^#' "$lf")"
 
 echo ""
+echo "=== idempotent_append.sh (idempotent_append_container) ==="
+# proot-distro login --user is mocked to just run the given command
+# directly against a real fake $HOME on disk, standing in for "inside
+# the container" — this asserts the function's own logic (marker
+# dedup, --env passthrough of multi-line content) without needing a
+# real proot-distro.
+CONTAINER_HOME_TEST="$TESTROOT/container_home_test"
+mkdir -p "$CONTAINER_HOME_TEST"
+proot-distro() {
+  # Drop "login DISTRO --user USER", actually export "--env NAME=VALUE"
+  # pairs (idempotent_append_container's whole content passthrough
+  # depends on these reaching the sh -c script as real env vars), then
+  # run whatever follows "--".
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --env) shift; export "$1"; shift ;;
+      --) shift; break ;;
+      *) shift ;;
+    esac
+  done
+  HOME="$CONTAINER_HOME_TEST" "$@"
+}
+idempotent_append_container archarm kattze ".config/nvim/lua/config/options.lua" "options" "vim.opt.x = 1" "--"
+idempotent_append_container archarm kattze ".config/nvim/lua/config/options.lua" "options" "vim.opt.x = 1" "--"
+idempotent_append_container archarm kattze ".config/nvim/lua/config/options.lua" "options" "vim.opt.x = 1" "--"
+assert_eq "idempotent_append_container stays idempotent across 3 calls" "1" \
+  "$(grep -c -- 'options >>>' "$CONTAINER_HOME_TEST/.config/nvim/lua/config/options.lua")"
+assert_eq "idempotent_append_container preserves multi-line content intact" "vim.opt.x = 1" \
+  "$(grep 'vim.opt.x' "$CONTAINER_HOME_TEST/.config/nvim/lua/config/options.lua")"
+unset -f proot-distro
+
+echo ""
 echo "=== network.sh (retry_with_backoff) ==="
 attempt=0
 flaky() { attempt=$((attempt + 1)); [ "$attempt" -ge 2 ]; }
@@ -411,6 +443,200 @@ assert_pass "install_rootfs_run does not attempt gpg/import/download when the co
   phase3_install_gpg_tool() { echo 'SHOULD NOT BE CALLED' >&2; exit 1; }
   phase3_download_and_verify() { echo 'SHOULD NOT BE CALLED' >&2; exit 1; }
   phase3_install_rootfs_run
+"
+
+echo ""
+echo "=== lazyvim.sh (regression: informe 2026-09-25, TSInstallSync obsolete / host-side checks) ==="
+# TSInstallSync belonged to nvim-treesitter's frozen 'master' branch;
+# LazyVim's starter pins 'main', which removed it entirely
+# ("E492: Not an editor command: TSInstallSync") — confirmed against
+# nvim-treesitter/LazyVim's own current docs. Locks in the modern Lua
+# API is what's actually sent to nvim, not the old ex-command.
+assert_pass "install_treesitter_parsers uses the modern Lua API, not TSInstallSync" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  SEEN=''
+  proot-distro() { SEEN=\"\$*\"; return 0; }
+  phase4_install_treesitter_parsers
+  ! grep -q 'TSInstallSync' <<< \"\$SEEN\" && grep -q \"require('nvim-treesitter').install\" <<< \"\$SEEN\"
+"
+# checkhealth's own wording is nvim-treesitter's UI copy, free to change
+# across versions (and did, moving 'master' -> 'main') — this checks
+# for the compiler directly instead of grepping that text.
+assert_pass "verify_treesitter_cc checks for gcc/cc directly, not checkhealth text" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  proot-distro() { case \"\$*\" in *'command -v gcc'*) return 0 ;; *) return 1 ;; esac; }
+  phase4_verify_treesitter_cc
+"
+# The bug: the old idempotency check for the LazyVim starter clone was a
+# host-side path via container_home — a false negative there (the same
+# class of bug as .zshrc) fell through to 'rm -rf' the whole nvim config
+# and re-clone from scratch, which would silently destroy a user's own
+# customizations on every single run. Confirms the check and the
+# destructive rm both now go through the container, not a host path.
+assert_pass "clone_lazyvim_starter skips (no destructive rm, no re-clone) when already present and clean" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  proot-distro() {
+    case \"\$*\" in
+      *'sh -c'*) return 0 ;;  # combined [-d nvim] && [!-d .git] && [!-f example.lua] check: clean
+      *'rm -rf'*) echo 'SHOULD NOT DELETE' >&2; return 1 ;;
+      *'git clone'*) echo 'SHOULD NOT RE-CLONE' >&2; return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase4_clone_lazyvim_starter
+"
+assert_pass "lazyvim_ok checks options.lua container-side, not a host-side container_home path" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  proot-distro() {
+    case \"\$*\" in
+      *'test -f'*'options.lua'*) return 0 ;;
+      *'lua print'*) echo 12 ;;
+      *'command -v nvim'*) return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase4_lazyvim_ok
+"
+assert_fail "lazyvim_ok still fails when options.lua is missing container-side" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  proot-distro() { case \"\$*\" in *'test -f'*'options.lua'*) return 1 ;; *) return 0 ;; esac; }
+  phase4_lazyvim_ok
+"
+assert_pass "write_options_overrides uses idempotent_append_container, not a host-side path" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'; source '$SCRIPT_DIR/lib/idempotent_append.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/lazyvim.sh'
+  LOGGED_IN=0
+  proot-distro() { LOGGED_IN=1; return 0; }
+  phase4_write_options_overrides
+  [ \"\$LOGGED_IN\" = 1 ]
+"
+
+echo ""
+echo "=== dev_toolchain.sh (paru.conf written container-side; regression: informe 2026-09-25) ==="
+assert_pass "write_paru_conf writes container-side, not a host-side container_home path" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/components/dev_toolchain.sh'
+  LOGGED_IN=0
+  proot-distro() { LOGGED_IN=1; return 0; }
+  phase4_write_paru_conf
+  [ \"\$LOGGED_IN\" = 1 ]
+"
+
+echo ""
+echo "=== cleanup.sh (regression: informe 2026-09-25, paru-bin deleted before it could be retried) ==="
+# The bug: phase5_cleanup deleted /tmp/paru-bin whenever
+# phase4_toolchain_ok passed — which only requires gcc+git since paru
+# became non-blocking, so it deleted the build directory even when
+# paru's OWN build/install had failed, wiping out exactly what
+# TROUBLESHOOTING.md tells people to retry from.
+assert_pass "cleanup does NOT delete /tmp/paru-bin when paru itself isn't actually installed" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  TDE_ROOTFS_TMPDIR='$TESTROOT/nonexistent_rootfs_tmp'
+  TDE_NERDFONT_TMPDIR='$TESTROOT/nonexistent_nerdfont_tmp'
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/lib/cleanup.sh'
+  phase4_toolchain_ok() { return 0; }   # gcc+git fine
+  phase5_nerdfont_ok() { return 0; }
+  phase3_rootfs_ok() { return 0; }
+  proot-distro() {
+    case \"\$*\" in
+      *'command -v paru'*) return 1 ;;   # paru itself never actually got installed
+      *'rm -rf /tmp/paru-bin'*) echo 'SHOULD NOT DELETE /tmp/paru-bin' >&2; return 1 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase5_cleanup
+"
+assert_pass "cleanup DOES delete /tmp/paru-bin once paru is actually present" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  TDE_DISTRO_NAME=archarm
+  TDE_ROOTFS_TMPDIR='$TESTROOT/nonexistent_rootfs_tmp2'
+  TDE_NERDFONT_TMPDIR='$TESTROOT/nonexistent_nerdfont_tmp2'
+  state_set ARCH_USERNAME kattze >/dev/null
+  source '$SCRIPT_DIR/lib/cleanup.sh'
+  phase4_toolchain_ok() { return 0; }
+  phase5_nerdfont_ok() { return 0; }
+  phase3_rootfs_ok() { return 0; }
+  DELETED=0
+  proot-distro() {
+    case \"\$*\" in
+      *'command -v paru'*) return 0 ;;
+      *'rm -rf /tmp/paru-bin'*) DELETED=1; return 0 ;;
+      *) return 0 ;;
+    esac
+  }
+  phase5_cleanup
+  [ \"\$DELETED\" = 1 ]
+"
+
+echo ""
+echo "=== install_maintenance.sh (regression: informe 2026-09-25, archhealth/archdiag missing sources for self-heal) ==="
+assert_pass "archhealth sources network.sh, idempotent_append.sh, telecom.sh, nerdfonts.sh (needed by phase5_self_heal)" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export PREFIX='$TESTROOT/maint_prefix1'; mkdir -p \"\$PREFIX/bin\"
+  source '$SCRIPT_DIR/components/install_maintenance.sh'
+  phase6_write_archhealth
+  grep -q '^source lib/network.sh' \"\$PREFIX/bin/archhealth\" &&
+  grep -q '^source lib/idempotent_append.sh' \"\$PREFIX/bin/archhealth\" &&
+  grep -q '^source components/telecom.sh' \"\$PREFIX/bin/archhealth\" &&
+  grep -q '^source components/nerdfonts.sh' \"\$PREFIX/bin/archhealth\"
+"
+assert_pass "archdiag sources network.sh, idempotent_append.sh, telecom.sh, nerdfonts.sh (needed by phase5_self_heal)" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export PREFIX='$TESTROOT/maint_prefix2'; mkdir -p \"\$PREFIX/bin\"
+  source '$SCRIPT_DIR/components/install_maintenance.sh'
+  phase6_write_archdiag
+  grep -q '^source lib/network.sh' \"\$PREFIX/bin/archdiag\" &&
+  grep -q '^source lib/idempotent_append.sh' \"\$PREFIX/bin/archdiag\" &&
+  grep -q '^source components/telecom.sh' \"\$PREFIX/bin/archdiag\" &&
+  grep -q '^source components/nerdfonts.sh' \"\$PREFIX/bin/archdiag\"
+"
+assert_pass "archupdate retries pacman -Syu instead of a single unguarded attempt" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export PREFIX='$TESTROOT/maint_prefix3'; mkdir -p \"\$PREFIX/bin\"
+  source '$SCRIPT_DIR/components/install_maintenance.sh'
+  phase6_write_archupdate
+  grep -q 'retry_with_backoff' \"\$PREFIX/bin/archupdate\" && grep -q '^source lib/network.sh' \"\$PREFIX/bin/archupdate\"
+"
+assert_pass "archhealth, archdiag, archupdate all still generate with valid bash syntax" bash -c "
+  source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+  source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+  export PREFIX='$TESTROOT/maint_prefix4'; mkdir -p \"\$PREFIX/bin\"
+  source '$SCRIPT_DIR/components/install_maintenance.sh'
+  phase6_write_archhealth; phase6_write_archdiag; phase6_write_archupdate
+  bash -n \"\$PREFIX/bin/archhealth\" && bash -n \"\$PREFIX/bin/archdiag\" && bash -n \"\$PREFIX/bin/archupdate\"
 "
 
 echo ""

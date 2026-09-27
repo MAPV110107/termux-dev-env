@@ -24,10 +24,18 @@ phase5_cleanup() {
   _cleanup_if phase3_rootfs_ok "$TDE_ROOTFS_TMPDIR" "rootfs tarball + GPG key cache"
   _cleanup_if phase5_nerdfont_ok "$TDE_NERDFONT_TMPDIR" "Nerd Font download cache"
 
-  if phase4_toolchain_ok; then
-    local username
-    username="$(state_get ARCH_USERNAME)"
-    [ -n "$username" ] && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin 2>/dev/null
+  # Gated on paru itself being present, not phase4_toolchain_ok (which
+  # only requires gcc/git — paru is optional and non-blocking, see
+  # dev_toolchain.sh). Deleting /tmp/paru-bin whenever the core toolchain
+  # merely looked fine, regardless of whether paru's own build+install
+  # actually succeeded, wiped out the exact directory this project's own
+  # TROUBLESHOOTING.md tells people to retry from after a failed paru
+  # install — leaving nothing left to retry.
+  local username
+  username="$(state_get ARCH_USERNAME)"
+  if [ -n "$username" ] && \
+     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v paru >/dev/null 2>&1; then
+    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin 2>/dev/null
     log_info "Cleaned up: paru build directory inside container"
   fi
 }
