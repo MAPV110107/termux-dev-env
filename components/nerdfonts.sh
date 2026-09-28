@@ -53,8 +53,16 @@ phase4_nerdfonts_run() {
   fi
 
   if phase4_ensure_unzip && phase4_download_nerdfont && phase4_extract_and_install_nerdfont; then
-    command -v termux-reload-settings >/dev/null 2>&1 && termux-reload-settings
-    log_warn "Font installed, but Android caches it at the app level — force-stop Termux from Android's app settings and reopen it for icons to render correctly"
+    # termux-reload-settings (part of termux-tools) broadcasts
+    # com.termux.app.reload_style, which Termux's own app listens for —
+    # it applies font.ttf/colors.properties changes immediately, no
+    # restart needed. It doesn't require the separate Termux:API app.
+    if command -v termux-reload-settings >/dev/null 2>&1; then
+      termux-reload-settings
+      log_info "Nerd Font installed and applied — icons should render right away"
+    else
+      log_warn "Nerd Font installed, but 'termux-reload-settings' wasn't found — restart Termux for icons to render"
+    fi
     return 0
   else
     log_warn "Nerd Font install skipped — the editor still works, just without icons. Re-run later to retry."

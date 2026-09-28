@@ -76,7 +76,14 @@ phase3_install_zshrc_snippet() {
 # Escape hatch: TDE_SKIP_LAUNCHER=1 zsh   (or export it before opening Termux)
 if [ -f "$TDE_LAUNCHER_CONFIG" ] && [ -z "\${PROOT_ACTIVE:-}" ] && [ -z "\${TDE_SKIP_LAUNCHER:-}" ]; then
   . "$TDE_LAUNCHER_CONFIG"
-  proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
+  # exec, not a plain call: replaces this Termux shell instead of
+  # spawning Arch as its child, so a single 'exit' from inside Arch
+  # closes the whole session (no more needing 'exit' twice). Trade-off:
+  # if the container login itself fails to even start (broken rootfs,
+  # missing user), there's no Termux shell left to fall back into — the
+  # session just ends. Recover with a fresh Termux session and
+  # TDE_SKIP_LAUNCHER=1, or use a second session and 'archkill'.
+  exec proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
 fi
 EOF
 )"

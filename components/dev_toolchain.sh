@@ -13,7 +13,7 @@ phase4_sync_and_install_toolchain() {
   # download (lib/network.sh), just applied to pacman itself.
   retry_with_backoff 3 15 \
     proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
-    log_fatal "pacman -Syu failed inside $TDE_DISTRO_NAME after 3 attempts — likely a network/mirror issue (mirror.archlinuxarm.org timeouts are common on mobile connections), not a package problem. See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
+    log_fatal_code 410 "pacman -Syu failed inside $TDE_DISTRO_NAME after 3 attempts — likely a network/mirror issue (mirror.archlinuxarm.org timeouts are common on mobile connections), not a package problem. See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
   # marksman deliberately NOT in this list: it's built by upstream Arch as
   # an x86_64-specific package (not "any" — its own package page confirms
   # this changed from "any" to "x86_64" between the 20251125-1 and
@@ -26,8 +26,8 @@ phase4_sync_and_install_toolchain() {
   # nothing is lost by not hard-depending on it here.
   retry_with_backoff 3 15 \
     proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
-    base-devel git tree-sitter-cli nodejs npm python python-pip clang rust go nano wget curl || \
-    log_fatal "Toolchain package install failed after 3 attempts — likely a network/mirror issue, not a package problem (these packages exist on Arch Linux ARM aarch64). See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
+    base-devel git tree-sitter-cli nodejs npm python python-pip clang rust go nano wget curl fastfetch || \
+    log_fatal_code 411 "Toolchain package install failed after 3 attempts — likely a network/mirror issue, not a package problem (these packages exist on Arch Linux ARM aarch64). See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
 }
 
 phase4_prompt_git_identity() {
@@ -96,6 +96,21 @@ phase4_install_paru() {
   }
 }
 
+# Sensible defaults so the environment is usable right away, not just
+# installed: main as the default branch, nvim as the editor git opens,
+# merge (not rebase) on pull so a first `git pull` never surprises
+# anyone. Non-blocking — none of it is required for anything else.
+phase4_git_defaults() {
+  local username
+  username="$(state_get ARCH_USERNAME)"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c '
+    git config --global init.defaultBranch main
+    git config --global core.editor nvim
+    git config --global pull.rebase false
+    git config --global color.ui auto
+  ' || log_warn "Could not set git defaults — set them later with 'git config --global ...'"
+}
+
 phase4_write_paru_conf() {
   local username
   username="$(state_get ARCH_USERNAME)"
@@ -105,7 +120,7 @@ phase4_write_paru_conf() {
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c '
     mkdir -p ~/.config/paru
   ' && proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    tee ~/.config/paru/paru.conf > /dev/null << 'EOF' || log_warn "Could not write paru.conf (non-essential — paru works with its defaults either way)"
+    tee "/home/$username/.config/paru/paru.conf" > /dev/null << 'EOF' || log_warn "Could not write paru.conf (non-essential — paru works with its defaults either way)"
 [options]
 BottomUp
 SkipReview
@@ -118,7 +133,7 @@ phase4_dev_toolchain_run() {
   log_info "=== Phase 4: dev toolchain (compiler, git, paru) ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would pacman -Syu, install base-devel/git/tree-sitter-cli/nodejs/npm, prompt for git identity, install paru-bin (non-blocking), write paru.conf"
+    log_info "[dry-run] would pacman -Syu, install base-devel/git/tree-sitter-cli/nodejs/npm, prompt for git identity, install paru-bin (non-blocking), write paru.conf, set git defaults (fastfetch included in the package list)"
     return 0
   fi
 
@@ -128,6 +143,7 @@ phase4_dev_toolchain_run() {
   # helper install must not take the whole toolchain phase down with it.
   phase4_install_paru || log_warn "Continuing without paru — see the warning above for how to retry it later"
   phase4_write_paru_conf
+  phase4_git_defaults
   log_info "Dev toolchain installed"
 }
 

@@ -273,6 +273,30 @@ or manually:
 proot-distro login archarm --user <your-username> -- sh -c '[ -f ~/.zshrc ] || cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc'
 ```
 
+## Theme/plugins not applied, `tee: /data/data/com.termux/files/home/.config/nvim/...: No such file or directory`, or nvim says `No specs found for module "plugins"` (silently checked the wrong home)
+
+Symptom: `agnoster` never shows up, zsh suggestions don't work, LazyVim
+opens with `Error in init.lua: No specs found for module "plugins"`, or
+the installer prints a `tee`/`sed` error whose path starts with
+`/data/data/com.termux/files/home/` (Termux's home, not the container's).
+
+Cause: `proot-distro login --user X -- tee ~/path` does **not** target
+the container user's home. `~` is expanded by the shell that *calls*
+`proot-distro` (Termux) before `proot-distro` even runs, so an unquoted
+`~/path` silently resolves to Termux's own `$HOME`. Edits and checks went
+to the wrong place: the LSP plugin files were written to Termux while
+`example.lua` had already been deleted inside the container (leaving
+`lua/plugins/` empty → "No specs found"), and `sed` for the theme/plugin
+edited Termux's `.zshrc`. As of 0.4.0 every such call uses an absolute
+`/home/<user>/...` path or keeps `~` inside a single-quoted `sh -c '...'`
+(expanded by the container's shell). A regression test fails if any of
+these ever leaks the host `$HOME` again.
+
+To repair an existing install, re-run the affected phase:
+```bash
+./core.sh --reinstall=4
+```
+
 ## `E492: Not an editor command: TSInstallSync`, or `[FATAL] LazyVim did not pass its post-condition check`
 
 `TSInstallSync` belonged to `nvim-treesitter`'s old (now frozen)

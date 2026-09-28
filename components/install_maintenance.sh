@@ -87,6 +87,14 @@ source lib/kv.sh
 source lib/state.sh
 source lib/idempotent_append.sh
 
+# Last error code recorded by log_fatal_code (see docs/ERROR_CODES.md) —
+# quote this in a bug report; it survives the terminal scrollback.
+if [ -f "$TDE_CONFIG_DIR/last_error.env" ]; then
+  echo "=== Last recorded error ==="
+  cat "$TDE_CONFIG_DIR/last_error.env"
+  echo ""
+fi
+
 if [ "${1:-}" != "--quick" ]; then
   echo "=== Hardware/environment: then vs now ==="
   source lib/diagnose.sh

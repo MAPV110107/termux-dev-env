@@ -10,6 +10,23 @@ Turn a stock Android phone into a full-featured **Arch Linux ARM** development w
 
 Features a tuned **LazyVim** IDE with complete **LSP support** (Bash, Markdown, Python, TypeScript, JavaScript, Rust, C/C++, Go, Kotlin, HTML, and CSS) powered by `mason.nvim`, `nvim-lspconfig`, and `blink.cmp`, universal **ZSH + Oh My Zsh + agnoster** across all host and internal terminal panes, parallel package downloads, memory-cached git credentials, Reticulum/Nomad Network, and speed-tuned `aria2` parallel downloads.
 
+<p align="center">
+  <img alt="License" src="https://img.shields.io/badge/license-MIT-brightgreen.svg">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.0-informational.svg">
+  <img alt="Tests" src="https://img.shields.io/badge/tests-passing-success.svg">
+</p>
+
+### ✨ What you get
+
+| | |
+|---|---|
+| 🐧 **Arch Linux ARM** | Full distro in `proot-distro`, GPG-verified rootfs, no root needed |
+| 🐚 **ZSH everywhere** | Oh My Zsh + `agnoster`, autosuggestions, tmux session, `fastfetch` banner on login |
+| ✍️ **LazyVim IDE** | Mason + LSP for 10 languages, treesitter parsers pre-built, Nerd Font icons |
+| 🧰 **Toolchain** | gcc/clang, Rust, Go, Node, Python, git (sane defaults), `paru` for the AUR |
+| 🛠️ **Self-maintaining** | `archhealth` · `archdiag` · `archupdate` · `archreset` · resumable phases |
+| 🚨 **Traceable failures** | Every fatal has a code (`[E4xx]`) — see [docs/ERROR_CODES.md](docs/ERROR_CODES.md) |
+
 ---
 
 ## ⚡ Quick Start (If you already have Termux)
@@ -31,6 +48,8 @@ chmod +x core.sh
 # 4. Run the installer (or preview with --dry-run)
 ./core.sh
 ```
+When it finishes, your shell restarts by itself and drops you straight into Arch (set `TDE_NO_AUTO_RESTART=1` to skip that).
+
 *(Press `Enter` to keep default configuration files if step 1 prompts for it. If step 1 reports repository/mirror changes, just run it a second time before continuing to step 2.)*
 
 ---
@@ -46,6 +65,7 @@ chmod +x core.sh
 - [Part 6 — Maintenance Commands](#part-6--maintenance-commands)
 - [Part 7 — CLI Flags & Options](#part-7--cli-flags--options)
 - [Known Limitations](#known-limitations)
+- [Reporting a problem](#reporting-a-problem)
 
 ---
 
@@ -193,7 +213,8 @@ The installation executes an idempotent, sequential 6-phase pipeline:
 ### Navigation & Terminals
 - **Launch**: Opening Termux drops you directly into your Arch Linux ZSH environment inside tmux.
 - **Internal Terminal**: Press `Ctrl + /` inside LazyVim to toggle an embedded floating/split ZSH terminal pane.
-- **Exit**: Type `exit` to close your session.
+- **Exit**: Type `exit` once — the launcher `exec`s into Arch, so one `exit` closes the whole Termux session.
+- **Welcome banner**: `fastfetch` prints system info at the start of every interactive session (never in scripted commands).
 - **Force Kill**: If a container process hangs, open a new Termux session and run `archkill`.
 - **Bypass Auto-Login**: Run `TDE_SKIP_LAUNCHER=1 zsh` to land in a plain Termux host shell.
 
@@ -250,13 +271,25 @@ Accessible directly from any Termux shell:
 ### Advanced Environment Variables
 - `TDE_ROOTFS_URL_OVERRIDE`: Supply a custom URL to a verified Arch ARM rootfs tarball (accompanied by `<url>.sig`).
 - `TDE_SKIP_LAUNCHER=1`: Bypasses the auto-login hook when launching a Termux session.
+- `TDE_NO_AUTO_RESTART=1`: Don't restart the shell (and jump into Arch) when the installer finishes.
+- `TDE_DRY_RUN=1`: Same as `--dry-run`.
 
 ---
 
 ## Known Limitations
 
 - **Isolated Storage**: Container runs with `--isolated` (proot filesystem isolation). Android `/sdcard` is not mounted inside the container by default.
-- **Font Rendering Cache**: After installing Nerd Fonts, force-stop Termux in Android Settings and relaunch if glyphs appear as boxes.
+- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux once from Android Settings and reopen it.
 - **Architecture**: Exclusively supports 64-bit ARM (`aarch64`). 32-bit ARM (`armv7l`) and x86_64 devices are not supported.
 
+## Reporting a problem
+
+1. Run `archdiag` — it prints the **last recorded error code** (e.g. `E411`), hardware drift, and component health.
+2. Look the code up in [docs/ERROR_CODES.md](docs/ERROR_CODES.md).
+3. Attach the newest file in `~/.config/termux-dev-env/logs/` to your report.
+
 For detailed debugging steps, mirror selection, and edge cases, see [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+
+## License
+
+MIT — see [LICENSE](LICENSE).

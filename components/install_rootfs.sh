@@ -23,15 +23,15 @@ phase3_install_gpg_tool() {
   command -v gpg >/dev/null 2>&1 && return 0
   log_info "Installing gnupg (needed to verify the rootfs signature)"
   retry_with_backoff 3 5 pkg install -y gnupg || \
-    log_fatal "Could not install gnupg — cannot verify rootfs integrity"
+    log_fatal_code 310 "Could not install gnupg — cannot verify rootfs integrity"
 }
 
 phase3_import_signing_key() {
   log_info "Importing Arch Linux ARM signing key"
   retry_with_backoff 3 5 curl -fsSL "$TDE_ARM_KEYRING_URL" -o "$TDE_ROOTFS_TMPDIR/archlinuxarm.gpg" || \
-    log_fatal "Could not download the Arch Linux ARM signing key"
+    log_fatal_code 311 "Could not download the Arch Linux ARM signing key"
   gpg --import "$TDE_ROOTFS_TMPDIR/archlinuxarm.gpg" || \
-    log_fatal "Could not import the Arch Linux ARM signing key"
+    log_fatal_code 312 "Could not import the Arch Linux ARM signing key"
 }
 
 # Tries each mirror in order; a corrupted download or a failed signature
@@ -56,7 +56,7 @@ phase3_download_and_verify() {
       log_info "GPG signature verified for pinned override"
       return 0
     fi
-    log_fatal "Pinned rootfs override failed to download or verify: $tarball_url"
+    log_fatal_code 313 "Pinned rootfs override failed to download or verify: $tarball_url"
   fi
 
   for mirror in "${TDE_ARM_MIRRORS[@]}"; do
@@ -82,7 +82,7 @@ phase3_download_and_verify() {
     rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
   done
 
-  log_fatal "Could not download and verify the Arch Linux ARM rootfs from any mirror"
+  log_fatal_code 314 "Could not download and verify the Arch Linux ARM rootfs from any mirror"
 }
 
 phase3_container_exists() {
@@ -115,12 +115,12 @@ phase3_container_exists() {
 phase3_install_rootfs() {
   log_info "Installing Arch Linux ARM into proot-distro as '$TDE_DISTRO_NAME'"
   proot-distro install "$TDE_ROOTFS_TARBALL" --name "$TDE_DISTRO_NAME" --architecture aarch64 || \
-    log_fatal "proot-distro install failed"
+    log_fatal_code 315 "proot-distro install failed"
 }
 
 phase3_smoke_test_rootfs() {
   proot-distro login "$TDE_DISTRO_NAME" -- true || \
-    log_fatal "Rootfs installed but failed to log in — installation is broken"
+    log_fatal_code 316 "Rootfs installed but failed to log in — installation is broken"
 }
 
 # Without this, pacman signature checks fail on a freshly installed
@@ -133,7 +133,7 @@ phase3_init_pacman_keyring() {
     pacman-key --init
     echo "disable-scdaemon" > /etc/pacman.d/gnupg/gpg-agent.conf
     pacman-key --populate archlinuxarm
-  ' < /dev/null || log_fatal "Could not initialize pacman keyring"
+  ' < /dev/null || log_fatal_code 317 "Could not initialize pacman keyring"
 }
 
 # pacman's sandboxed download/hook execution needs Linux namespaces proot
@@ -165,7 +165,7 @@ phase3_disable_pacman_sandbox() {
     log_warn "DisableSandbox still missing after attempt $attempt/3 — retrying"
     sleep 2
   done
-  log_fatal "Could not get DisableSandbox into pacman.conf inside $TDE_DISTRO_NAME after 3 attempts. Manual fix: proot-distro login $TDE_DISTRO_NAME -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf — then re-run ./core.sh. See $TDE_LOG_FILE for the raw sed/login output."
+  log_fatal_code 318 "Could not get DisableSandbox into pacman.conf inside $TDE_DISTRO_NAME after 3 attempts. Manual fix: proot-distro login $TDE_DISTRO_NAME -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf — then re-run ./core.sh. See $TDE_LOG_FILE for the raw sed/login output."
 }
 
 # Post-condition, checked by core.sh before marking PHASE3_ROOTFS_INSTALLED —

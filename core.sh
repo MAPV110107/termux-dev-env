@@ -68,7 +68,7 @@ if [ -n "$TDE_REINSTALL_PHASE" ]; then
         log_info "Cleared state for phase $TDE_REINSTALL_PHASE onward — they will redo on this run"
       fi
       ;;
-    *) log_fatal "Invalid --reinstall value: '$TDE_REINSTALL_PHASE' (must be 1-6)" ;;
+    *) log_fatal_code 100 "Invalid --reinstall value: '$TDE_REINSTALL_PHASE' (must be 1-6)" ;;
   esac
 fi
 
@@ -104,7 +104,7 @@ if [ "$(state_get PHASE3_ROOTFS_INSTALLED)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase3_rootfs_ok; then
     state_set PHASE3_ROOTFS_INSTALLED 1
   else
-    log_fatal "Rootfs install did not pass its post-condition check"
+    log_fatal_code 301 "Rootfs install did not pass its post-condition check"
   fi
 fi
 if [ "$(state_get PHASE3_USER_CREATED)" != "1" ]; then
@@ -114,7 +114,7 @@ if [ "$(state_get PHASE3_USER_CREATED)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase3_user_ok; then
     state_set PHASE3_USER_CREATED 1
   else
-    log_fatal "User creation did not pass its post-condition check"
+    log_fatal_code 302 "User creation did not pass its post-condition check"
   fi
 fi
 if [ "$(state_get PHASE3_LAUNCHER_SETUP)" != "1" ]; then
@@ -124,7 +124,7 @@ if [ "$(state_get PHASE3_LAUNCHER_SETUP)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase3_launcher_ok; then
     state_set PHASE3_LAUNCHER_SETUP 1
   else
-    log_fatal "Launcher setup did not pass its post-condition check"
+    log_fatal_code 303 "Launcher setup did not pass its post-condition check"
   fi
 fi
 state_set PHASE3_DONE 1
@@ -138,7 +138,7 @@ if [ "$(state_get PHASE4_TOOLCHAIN)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase4_toolchain_ok; then
     state_set PHASE4_TOOLCHAIN 1
   else
-    log_fatal "Toolchain did not pass its post-condition check"
+    log_fatal_code 401 "Toolchain did not pass its post-condition check"
   fi
 fi
 if [ "$(state_get PHASE4_FONTS)" != "1" ]; then
@@ -157,7 +157,7 @@ if [ "$(state_get PHASE4_SHELL)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase4_shell_ok; then
     state_set PHASE4_SHELL 1
   else
-    log_fatal "Shell setup did not pass its post-condition check"
+    log_fatal_code 402 "Shell setup did not pass its post-condition check"
   fi
 fi
 if [ "$(state_get PHASE4_LAZYVIM)" != "1" ]; then
@@ -167,7 +167,7 @@ if [ "$(state_get PHASE4_LAZYVIM)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase4_lazyvim_ok; then
     state_set PHASE4_LAZYVIM 1
   else
-    log_fatal "LazyVim did not pass its post-condition check"
+    log_fatal_code 403 "LazyVim did not pass its post-condition check"
   fi
 fi
 if [ "$(state_get PHASE4_TELECOM)" != "1" ]; then
@@ -228,10 +228,29 @@ if [ "$(state_get PHASE6_DONE)" != "1" ]; then
   if [ "$TDE_DRY_RUN" = "1" ] || phase6_maintenance_ok; then
     state_set PHASE6_DONE 1
   else
-    log_fatal "Maintenance command install did not pass its post-condition check"
+    log_fatal_code 601 "Maintenance command install did not pass its post-condition check"
   fi
 else
   log_info "Phase 6 already completed, skipping"
 fi
 
 log_info "termux-dev-env: installation complete. Maintenance commands available: archhealth, archdiag, archupdate, archreset, archreapply, archbridge."
+
+# Drops straight into Arch instead of leaving the person in the same
+# Termux shell the installer ran in — that shell started before the
+# launcher snippet existed in .bashrc/.zshrc, so it won't auto-enter
+# Arch on its own; only a *new* Termux session would. Restarting this
+# one's shell (not the Termux app) gets the same effect immediately.
+# Skipped for dry-run, a non-interactive/non-TTY run (CI, a piped
+# script), or when TDE_NO_AUTO_RESTART=1 is set.
+if [ "$TDE_DRY_RUN" != "1" ] && [ -z "${TDE_NO_AUTO_RESTART:-}" ] && [ -t 0 ] && [ -t 1 ]; then
+  log_info "Restarting your shell in 3s to drop you into Arch now (Ctrl+C to stay in Termux; TDE_NO_AUTO_RESTART=1 ./core.sh to skip this next time)..."
+  sleep 3
+  # exec skips the EXIT trap that normally releases the installer lock,
+  # and would hand the lock's file descriptor to the new shell (and the
+  # Arch session under it) — keeping ./core.sh, archupdate, etc. locked
+  # out for as long as that session lives. Release and close it first.
+  lock_release
+  eval "exec ${TDE_LOCK_FD}>&-"
+  exec "${SHELL:-bash}" -l
+fi

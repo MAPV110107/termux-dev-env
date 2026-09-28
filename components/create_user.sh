@@ -31,7 +31,7 @@ phase3_prompt_username() {
 phase3_ensure_sudo_installed() {
   log_info "Installing sudo and zsh inside $TDE_DISTRO_NAME"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -Sy --noconfirm sudo zsh || \
-    log_fatal "Could not install sudo/zsh inside $TDE_DISTRO_NAME"
+    log_fatal_code 320 "Could not install sudo/zsh inside $TDE_DISTRO_NAME"
 }
 
 # Safety net, not the primary mechanism: wheel already gets passwordless
@@ -93,7 +93,7 @@ phase3_create_user_run() {
   else
     log_info "Creating user '$username' inside $TDE_DISTRO_NAME"
     proot-distro login "$TDE_DISTRO_NAME" -- useradd -m -G wheel -s /usr/bin/zsh "$username" || \
-      log_fatal "useradd failed for '$username'"
+      log_fatal_code 321 "useradd failed for '$username'"
   fi
 
   phase3_set_user_password "$username"
@@ -113,7 +113,7 @@ phase3_create_user_run() {
     chmod 0440 /etc/sudoers.d/wheel-nopasswd
     visudo -c
   ' >>"$TDE_LOG_FILE" 2>&1 || \
-    log_fatal "Could not configure passwordless sudo for wheel — visudo reported a syntax problem, see $TDE_LOG_FILE. A password was set above as a fallback: proot-distro login $TDE_DISTRO_NAME -- passwd $username"
+    log_fatal_code 322 "Could not configure passwordless sudo for wheel — visudo reported a syntax problem, see $TDE_LOG_FILE. A password was set above as a fallback: proot-distro login $TDE_DISTRO_NAME -- passwd $username"
 
   log_info "User '$username' created with zsh shell and passwordless sudo (wheel group)"
 }

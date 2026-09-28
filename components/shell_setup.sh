@@ -10,7 +10,7 @@ TDE_OHMYZSH_INSTALL_URL="https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/maste
 phase4_install_zsh_packages() {
   log_info "Installing zsh and tmux"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed zsh tmux || \
-    log_fatal "Could not install zsh/tmux"
+    log_fatal_code 420 "Could not install zsh/tmux"
 }
 
 phase4_install_ohmyzsh() {
@@ -33,7 +33,7 @@ phase4_install_ohmyzsh() {
     log_info "oh-my-zsh already installed, skipping"
     return 0
   fi
-  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -d ~/.oh-my-zsh 2>/dev/null; then
+  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -d "/home/$username/.oh-my-zsh" 2>/dev/null; then
     log_warn ".oh-my-zsh exists but .zshrc is missing (interrupted previous install) — re-running the installer to repair it"
   fi
 
@@ -43,7 +43,7 @@ phase4_install_ohmyzsh() {
     install_script="$(curl -fsSL "$OHMYZSH_URL")"
     [ -n "$install_script" ]
     RUNZSH=no CHSH=no KEEP_ZSHRC=no sh -c "$install_script"
-  ' || log_fatal "oh-my-zsh install failed"
+  ' || log_fatal_code 421 "oh-my-zsh install failed"
 
   # Belt and suspenders: the upstream installer has historically had edge
   # cases where it exits 0 without actually placing .zshrc (a bad $HOME,
@@ -51,11 +51,11 @@ phase4_install_ohmyzsh() {
   # phase (theme, plugin, the PROOT_ACTIVE/tmux snippet) assumes .zshrc
   # exists, so make sure of it right here instead of letting a "sed: No
   # such file" surface three functions later with no context.
-  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f ~/.zshrc 2>/dev/null; then
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.zshrc" 2>/dev/null; then
     log_warn ".zshrc still missing after oh-my-zsh install reported success — writing a minimal fallback so the rest of Phase 4 has something to work with"
     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c \
       'cp ~/.oh-my-zsh/templates/zshrc.zsh-template ~/.zshrc 2>/dev/null || printf "export ZSH=\"\$HOME/.oh-my-zsh\"\nZSH_THEME=\"robbyrussell\"\nplugins=(git)\nsource \$ZSH/oh-my-zsh.sh\n" > ~/.zshrc' || \
-      log_fatal "Could not create .zshrc even as a fallback — oh-my-zsh install is unrecoverable, check $TDE_LOG_FILE"
+      log_fatal_code 422 "Could not create .zshrc even as a fallback — oh-my-zsh install is unrecoverable, check $TDE_LOG_FILE"
   fi
 }
 
@@ -64,8 +64,12 @@ phase4_install_zsh_autosuggestions() {
   username="$(state_get ARCH_USERNAME)"
 
   # Container-side check, same reasoning as phase4_install_ohmyzsh above.
+  # Absolute path, not ~/... — a bare tilde here would be expanded by
+  # THIS (Termux-side) shell before proot-distro ever sees it, testing
+  # Termux's own home instead of the container user's (see
+  # docs/TROUBLESHOOTING.md's "silently checked the wrong home" section).
   if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-       test -d ~/.oh-my-zsh/custom/plugins/zsh-autosuggestions 2>/dev/null; then
+       test -d "/home/$username/.oh-my-zsh/custom/plugins/zsh-autosuggestions" 2>/dev/null; then
     log_info "zsh-autosuggestions already present"
     return 0
   fi
@@ -86,7 +90,7 @@ phase4_enable_autosuggestions_plugin() {
   # clear warning naming exactly what's missing and why this step is
   # being skipped. Checked and edited from inside the container (not a
   # host-side path) — see phase4_install_ohmyzsh's comment for why.
-  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f ~/.zshrc 2>/dev/null; then
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.zshrc" 2>/dev/null; then
     log_warn ".zshrc missing for '$username' — skipping zsh-autosuggestions plugin enable (shell will still work, just without suggestions)"
     return 0
   fi
@@ -102,12 +106,17 @@ phase4_enable_autosuggestions_plugin() {
 phase4_set_zsh_theme() {
   local username
   username="$(state_get ARCH_USERNAME)"
-  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f ~/.zshrc 2>/dev/null; then
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.zshrc" 2>/dev/null; then
     log_warn ".zshrc missing for '$username' — skipping theme set (shell will still work, just with oh-my-zsh's default theme)"
     return 0
   fi
+  # sed's target wrapped in sh -c so the tilde is expanded remotely, by
+  # the container's own shell — as a bare argument here it would instead
+  # be expanded by THIS (Termux-side) shell before proot-distro ever
+  # runs, silently editing Termux's own $HOME/.zshrc if one happens to
+  # exist there, not the container's.
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    sed -i 's/^ZSH_THEME=.*/ZSH_THEME="agnoster"/' ~/.zshrc || \
+    sh -c 'sed -i "s/^ZSH_THEME=.*/ZSH_THEME=\"agnoster\"/" ~/.zshrc' || \
     log_warn "Could not set ZSH_THEME in .zshrc"
 }
 
@@ -132,6 +141,18 @@ phase4_write_zshrc_extras() {
   # steps that have no TTY loop to break out of it.
   runtime_block='export PROOT_ACTIVE=1
 export PATH="$HOME/.local/bin:$PATH"
+export EDITOR=nvim
+export VISUAL=nvim
+alias vi=nvim
+alias vim=nvim
+alias ll="ls -lah --color=auto"
+# Same interactive+TTY guard as the tmux block below, and for the same
+# reason: this must never fire on a scripted "proot-distro login --
+# <command>" call (every phase 4-6 step and archhealth/archdiag/
+# archupdate use exactly that), only on a real session.
+if [[ -o interactive ]] && [ -t 0 ] && command -v fastfetch >/dev/null 2>&1; then
+  fastfetch
+fi
 if [[ -o interactive ]] && [ -t 0 ] && command -v tmux >/dev/null 2>&1 && [ -z "$TMUX" ]; then
   tmux attach -t main 2>/dev/null || tmux new -s main
 fi'
@@ -156,7 +177,7 @@ phase4_shell_setup_run() {
   log_info "=== Phase 4: shell setup (zsh + oh-my-zsh) ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install zsh+tmux, oh-my-zsh, zsh-autosuggestions, agnoster theme, set zsh as default shell, append PROOT_ACTIVE + tmux auto-attach"
+    log_info "[dry-run] would install zsh+tmux, oh-my-zsh, zsh-autosuggestions, agnoster theme, set zsh as default shell, append PROOT_ACTIVE + EDITOR/aliases + fastfetch banner + tmux auto-attach"
     return 0
   fi
 
@@ -183,10 +204,10 @@ phase4_shell_ok() {
     log_warn "post-check: '$username's login shell is '${shell:-unknown}', not /usr/bin/zsh"
     ok=0
   fi
-  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f ~/.zshrc 2>/dev/null; then
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.zshrc" 2>/dev/null; then
     log_warn "post-check: .zshrc does not exist for '$username'"
     ok=0
-  elif ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- grep -q 'ZSH_THEME="agnoster"' ~/.zshrc 2>/dev/null; then
+  elif ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c 'grep -q "ZSH_THEME=\"agnoster\"" ~/.zshrc' 2>/dev/null; then
     log_warn "post-check: ZSH_THEME=\"agnoster\" missing from .zshrc"
     ok=0
   fi

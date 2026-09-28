@@ -11,7 +11,7 @@ phase4_ensure_neovim() {
   log_info "Installing neovim and editor-adjacent tools (ripgrep, fd, lazygit)"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
     neovim ripgrep fd lazygit || \
-    log_fatal "Could not install neovim/ripgrep/fd/lazygit"
+    log_fatal_code 430 "Could not install neovim/ripgrep/fd/lazygit"
 }
 
 # Configures global npm prefix and installs language servers and linters.
@@ -23,7 +23,16 @@ phase4_setup_npm_global() {
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     npm config set prefix "$npm_global" || \
-    log_fatal "Could not configure npm global prefix"
+    log_fatal_code 431 "Could not configure npm global prefix"
+
+  # npm 10+ blocks install-scripts on global installs by default (a real
+  # security default, not a bug) — core-js (a transitive dep of several
+  # of these) has a no-op postinstall that's safe to allow explicitly,
+  # which silences the "1 package had install scripts blocked" warning
+  # without disabling the protection for anything else.
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    npm config set allow-scripts=core-js --location=user || \
+    log_warn "Could not set npm allow-scripts — harmless, just leaves a 'blocked install scripts' warning in the log"
 
   log_info "Installing global language servers and tools via npm (typescript, eslint, bashls, html/css, vtsls, pyright)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
@@ -61,12 +70,17 @@ phase4_clone_lazyvim_starter() {
 
   # A partial clone from a crashed previous attempt would make git clone
   # refuse to run (target directory not empty) — clear it first so retry
-  # actually retries instead of failing on a stale half-state.
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf ~/.config/nvim 2>/dev/null
+  # actually retries instead of failing on a stale half-state. Absolute
+  # path, not ~/... — bare, a tilde here would be expanded by THIS
+  # (Termux-side) shell before proot-distro ever runs, silently
+  # rm -rf-ing Termux's own $HOME/.config/nvim (if any) instead of the
+  # container's — see docs/TROUBLESHOOTING.md's "silently checked the
+  # wrong home" section.
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf "/home/$username/.config/nvim" 2>/dev/null
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     git clone --depth 1 "$TDE_LAZYVIM_STARTER_URL" "/home/$username/.config/nvim" || \
-    log_fatal "Could not clone LazyVim starter"
+    log_fatal_code 432 "Could not clone LazyVim starter"
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     sh -c 'rm -rf ~/.config/nvim/.git; rm -f ~/.config/nvim/lua/plugins/example.lua'
@@ -123,10 +137,10 @@ phase4_write_plugin_overrides() {
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c '
     mkdir -p ~/.config/nvim/lua/plugins
     rm -f ~/.config/nvim/lua/plugins/no-lsp-completion.lua
-  ' || log_fatal "Could not prepare nvim plugins directory"
+  ' || log_fatal_code 433 "Could not prepare nvim plugins directory"
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    tee ~/.config/nvim/lua/plugins/lsp.lua > /dev/null << 'EOF'
+    tee "/home/$username/.config/nvim/lua/plugins/lsp.lua" > /dev/null << 'EOF'
 return {
   -- Language Server Protocol configuration for common languages
   {
@@ -213,7 +227,7 @@ return {
 EOF
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    tee ~/.config/nvim/lua/plugins/terminal.lua > /dev/null << 'EOF'
+    tee "/home/$username/.config/nvim/lua/plugins/terminal.lua" > /dev/null << 'EOF'
 return {
   -- Ensure snacks terminal uses zsh explicitly
   {
@@ -228,7 +242,7 @@ return {
 EOF
 
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    tee ~/.config/nvim/lua/plugins/file-explorer.lua > /dev/null << 'EOF'
+    tee "/home/$username/.config/nvim/lua/plugins/file-explorer.lua" > /dev/null << 'EOF'
 return {
   { "nvim-neo-tree/neo-tree.nvim", enabled = false },
   {
@@ -255,7 +269,7 @@ phase4_sync_plugins() {
   log_info "Syncing LazyVim plugins (downloads everything on first run)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     nvim --headless -c "lua require('lazy').sync({wait = true})" -c "qa" || \
-    log_fatal "Lazy plugin sync failed"
+    log_fatal_code 434 "Lazy plugin sync failed"
 }
 
 # Pre-installs parsers instead of leaving them to LazyVim's on-demand
@@ -363,7 +377,7 @@ phase4_lazyvim_ok() {
   local username loaded
   username="$(state_get ARCH_USERNAME)"
   [ -n "$username" ] || return 1
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f ~/.config/nvim/lua/config/options.lua 2>/dev/null || return 1
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.config/nvim/lua/config/options.lua" 2>/dev/null || return 1
   loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
     nvim --headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)"
   [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ] || return 1
