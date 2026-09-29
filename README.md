@@ -12,7 +12,7 @@ Features a tuned **LazyVim** IDE with complete **LSP support** (Bash, Markdown, 
 
 <p align="center">
   <img alt="License" src="https://img.shields.io/badge/license-MIT-brightgreen.svg">
-  <img alt="Version" src="https://img.shields.io/badge/version-0.4.0-informational.svg">
+  <img alt="Version" src="https://img.shields.io/badge/version-0.4.1-informational.svg">
   <img alt="Tests" src="https://img.shields.io/badge/tests-passing-success.svg">
 </p>
 

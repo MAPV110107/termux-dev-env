@@ -297,6 +297,43 @@ To repair an existing install, re-run the affected phase:
 ./core.sh --reinstall=4
 ```
 
+## `[E403] LazyVim did not pass its post-condition check`, even though the log shows plugins loading fine
+
+Two independent bugs on a real device, both fixed as of 0.4.1:
+
+**Race between LazyVim's own parser install and this project's own.**
+`nvim-treesitter` on the `main` branch installs its configured parser
+list itself, on every startup (`opts.ensure_installed`). The installer
+*also* pre-installs parsers, in a separate headless `nvim` run — two
+processes could end up building the same parser to the same
+`~/.cache/nvim/<lang>/parser.so` at once:
+```
+Dynamic library `.../tree-sitter-vim/parser.so` not found after build attempt.
+Are you running multiple processes building to the same output location?
+```
+As of 0.4.1, an override (`lua/plugins/treesitter.lua`) empties
+`ensure_installed` specifically when `TDE_SKIP_TS_ENSURE=1` is set —
+which every installer-driven `nvim --headless` call sets, and only
+those, so a normal interactive session still gets LazyVim's own
+behavior unchanged. Parser installs are also now verified afterward
+(`get_installed()`) and retried once for anything still missing,
+instead of trusting `:wait()` finishing without error.
+
+**Headless `print()` goes to stderr, not stdout.** The post-condition
+used to read the loaded-plugin count with
+`nvim --headless -c "lua print(...)" -c "qa" 2>/dev/null`. In
+`--headless` mode Neovim's `print()`/`:echo` write to **stderr**, so
+discarding stderr discarded the only place the number was ever
+printed — the check could FATAL with `E403` even when the log showed
+LazyVim working correctly (`Lazy plugins loaded: 6`). As of 0.4.1 this
+uses `io.stdout:write(...)` instead (with a `print()`-from-stderr
+fallback for anything still expecting the old behavior). To check by
+hand:
+```bash
+proot-distro login archarm --user <your-username> -- \
+  nvim --headless -c "lua io.stdout:write(tostring(require('lazy').stats().loaded))" -c "qa"
+```
+
 ## `E492: Not an editor command: TSInstallSync`, or `[FATAL] LazyVim did not pass its post-condition check`
 
 `TSInstallSync` belonged to `nvim-treesitter`'s old (now frozen)

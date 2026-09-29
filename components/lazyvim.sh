@@ -7,6 +7,31 @@ TDE_LAZYVIM_LOADED=1
 
 TDE_LAZYVIM_STARTER_URL="https://github.com/LazyVim/starter"
 
+# Headless nvim inside the container as the target user. TDE_SKIP_TS_ENSURE=1
+# switches LazyVim's own startup parser install off for installer-driven
+# runs (see phase4_write_plugin_overrides), so only one thing ever builds
+# parsers at a time.
+_tde_nvim_headless() {
+  local username
+  username="$(state_get ARCH_USERNAME)"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" --env TDE_SKIP_TS_ENSURE=1 -- nvim --headless "$@"
+}
+
+# Number of plugins lazy.nvim reports as loaded ("" if it can't be read).
+# Written with io.stdout:write, not print(): in --headless mode Neovim
+# sends print()/:echo output to stderr, so a check that discards stderr
+# (2>/dev/null) sees nothing at all — which made phase4_lazyvim_ok fail
+# with E403 even though LazyVim was installed and lazy reported 6 plugins
+# loaded. Falls back to reading print() from stderr for older builds.
+_tde_lazy_loaded() {
+  local loaded
+  loaded="$(_tde_nvim_headless -c "lua io.stdout:write(tostring(require('lazy').stats().loaded) .. '\\n') io.stdout:flush()" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)" || true
+  if [ -z "$loaded" ]; then
+    loaded="$(_tde_nvim_headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>&1 | grep -E '^[0-9]+$' | tail -n1)" || true
+  fi
+  echo "$loaded"
+}
+
 phase4_ensure_neovim() {
   log_info "Installing neovim and editor-adjacent tools (ripgrep, fd, lazygit)"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
@@ -258,6 +283,27 @@ return {
   },
 }
 EOF
+
+  # LazyVim's nvim-treesitter (main branch) installs its own default
+  # parser list (bash, c, lua, python, ... ) on EVERY startup. The
+  # installer also pre-installs parsers, in the same nvim process —
+  # two concurrent builds of the same parser to the same parser.so
+  # ("Are you running multiple processes building to the same output
+  # location?", seen on a real device). While the installer runs it sets
+  # TDE_SKIP_TS_ENSURE=1 so exactly one installer (ours) is active; in
+  # normal use the variable is unset and LazyVim behaves as usual,
+  # including for any extras added later.
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    tee "/home/$username/.config/nvim/lua/plugins/treesitter.lua" > /dev/null << 'EOF'
+return {
+  "nvim-treesitter/nvim-treesitter",
+  opts = function(_, opts)
+    if vim.env.TDE_SKIP_TS_ENSURE == "1" then
+      opts.ensure_installed = {}
+    end
+  end,
+}
+EOF
 }
 
 # 'sync' spawns background jobs; wait = true is what actually blocks until
@@ -267,39 +313,88 @@ phase4_sync_plugins() {
   local username
   username="$(state_get ARCH_USERNAME)"
   log_info "Syncing LazyVim plugins (downloads everything on first run)"
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    nvim --headless -c "lua require('lazy').sync({wait = true})" -c "qa" || \
+  _tde_nvim_headless -c "lua require('lazy').sync({wait = true})" -c "qa" || \
     log_fatal_code 434 "Lazy plugin sync failed"
 }
 
-# Pre-installs parsers instead of leaving them to LazyVim's on-demand
-# auto-install — otherwise the first file of each type opened pays a
-# one-time compile delay.
+# Parsers to pre-build: LazyVim's own defaults (so its first real startup
+# has nothing left to compile) plus the extra languages this project
+# targets. One list, one installer, one process — see the
+# TDE_SKIP_TS_ENSURE override written by phase4_write_plugin_overrides.
+TDE_TS_PARSERS="bash c diff html javascript jsdoc json lua luadoc luap markdown markdown_inline printf python query regex toml tsx typescript vim vimdoc xml yaml rust cpp go kotlin css scss jsonc gitcommit gitignore"
+
+# Pre-installs parsers instead of leaving them to on-demand install —
+# otherwise the first file of each type opened pays a one-time compile.
 #
-# TSInstallSync belonged to nvim-treesitter's old (now frozen) 'master'
-# branch. LazyVim's starter pins nvim-treesitter to 'main', which
-# removed the TSInstall* ex-commands entirely in its leaner rewrite —
-# using it there is "E492: Not an editor command: TSInstallSync", which
-# both breaks parser pre-install AND drags down phase4_lazyvim_ok's
-# loaded-plugin count, since the failing headless command can abort the
-# session before other startup work finishes. This uses 'main's actual
-# Lua API instead. :wait(300000) caps it at 5 minutes — long enough for
-# ~25 parsers to compile on a slow phone, short enough to not hang
-# forever if something is actually stuck.
+# TSInstallSync belonged to nvim-treesitter's frozen 'master' branch;
+# LazyVim pins 'main', which removed the TSInstall* ex-commands
+# ("E492: Not an editor command") — this uses main's Lua API.
+#
+# Not just "run install and hope": on a phone some parser builds fail
+# transiently (timeouts, low memory, an interrupted earlier run leaving a
+# half-built ~/.cache/nvim/tree-sitter-<lang>/). So this checks
+# get_installed() afterwards, clears the stale build dir of anything
+# missing, retries just those once, and reports exactly what is still
+# missing instead of an unhelpful "some failed".
 phase4_install_treesitter_parsers() {
-  local username
+  local username lua_file lua_list p out missing
   username="$(state_get ARCH_USERNAME)"
-  log_info "Pre-installing treesitter parsers (web dev + bash + python + rust + c/cpp + go + kotlin + git + markdown + config)"
+  lua_file="/home/$username/.cache/tde/ts_install.lua"
+
+  lua_list=""
+  for p in $TDE_TS_PARSERS; do lua_list="${lua_list}'${p}',"; done
+
+  log_info "Pre-installing treesitter parsers ($(echo "$TDE_TS_PARSERS" | wc -w) languages — this can take several minutes on a phone)"
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    nvim --headless -c "lua require('nvim-treesitter').install({ 'bash', 'lua', 'vim', 'vimdoc', 'query', 'javascript', 'typescript', 'tsx', 'python', 'rust', 'c', 'cpp', 'go', 'kotlin', 'html', 'css', 'scss', 'markdown', 'markdown_inline', 'yaml', 'toml', 'json', 'jsonc', 'gitcommit', 'gitignore', 'diff', 'regex' }):wait(300000)" -c "qa" || \
-    log_warn "Some treesitter parsers failed to pre-install — they will still auto-install on first use of that filetype"
+    mkdir -p "/home/$username/.cache/tde" || {
+      log_warn "Could not create the parser-install helper directory — parsers will install on first use instead"
+      return 0
+    }
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    tee "$lua_file" > /dev/null << EOF || { log_warn "Could not write the parser-install helper — parsers will install on first use instead"; return 0; }
+local want = { ${lua_list} }
+local ts = require('nvim-treesitter')
+
+local function missing()
+  local have = {}
+  for _, l in ipairs(ts.get_installed()) do have[l] = true end
+  local m = {}
+  for _, l in ipairs(want) do
+    if not have[l] then m[#m + 1] = l end
+  end
+  return m
+end
+
+local ok, err = pcall(function() ts.install(want):wait(600000) end)
+if not ok then io.stderr:write('treesitter install error: ' .. tostring(err) .. '\\n') end
+
+local m = missing()
+if #m > 0 then
+  for _, l in ipairs(m) do
+    vim.fn.delete(vim.fn.stdpath('cache') .. '/tree-sitter-' .. l, 'rf')
+  end
+  pcall(function() ts.install(m):wait(300000) end)
+  m = missing()
+end
+
+io.stdout:write('TS_MISSING=' .. table.concat(m, ',') .. '\\n')
+io.stdout:flush()
+EOF
+
+  out="$(_tde_nvim_headless -c "luafile $lua_file" -c "qa" 2>>"$TDE_LOG_FILE" | grep '^TS_MISSING=' | tail -n1)" || true
+  missing="${out#TS_MISSING=}"
+  if [ -z "$out" ]; then
+    log_warn "Could not confirm which treesitter parsers installed (see $TDE_LOG_FILE) — they will still auto-install on first use of that filetype"
+  elif [ -n "$missing" ]; then
+    log_warn "Treesitter parsers still missing after a retry: $missing — they will auto-install on first use of that filetype (needs network then)"
+  else
+    log_info "All treesitter parsers installed"
+  fi
 }
 
 phase4_verify_lazy() {
-  local username loaded
-  username="$(state_get ARCH_USERNAME)"
-  loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    nvim --headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>&1 | grep -E '^[0-9]+$' | tail -n1)"
+  local loaded
+  loaded="$(_tde_lazy_loaded)"
   log_info "Lazy plugins loaded: ${loaded:-unknown}"
 }
 
@@ -374,12 +469,23 @@ phase4_lazyvim_run() {
 # alongside nvim itself resolving is the part that's actually checkable
 # from a bare headless run.
 phase4_lazyvim_ok() {
-  local username loaded
+  local username loaded ok=1
   username="$(state_get ARCH_USERNAME)"
-  [ -n "$username" ] || return 1
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.config/nvim/lua/config/options.lua" 2>/dev/null || return 1
-  loaded="$(proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    nvim --headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)"
-  [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ] || return 1
-  proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'command -v nvim >/dev/null 2>&1'
+  [ -n "$username" ] || { log_warn "post-check: no ARCH_USERNAME in state"; return 1; }
+
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.config/nvim/lua/config/options.lua" 2>/dev/null; then
+    log_warn "post-check: ~/.config/nvim/lua/config/options.lua is missing inside the container"
+    ok=0
+  fi
+  loaded="$(_tde_lazy_loaded)"
+  if ! { [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ]; }; then
+    log_warn "post-check: could not read a plugin count from lazy.nvim (got '${loaded:-nothing}') — nvim failed to start or lazy.nvim is not installed"
+    ok=0
+  fi
+  if ! proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'command -v nvim >/dev/null 2>&1'; then
+    log_warn "post-check: nvim is not on PATH inside the container"
+    ok=0
+  fi
+
+  [ "$ok" = "1" ]
 }

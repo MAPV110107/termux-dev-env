@@ -6,6 +6,14 @@
 [ -n "${TDE_IDEMPOTENT_APPEND_LOADED:-}" ] && return 0
 TDE_IDEMPOTENT_APPEND_LOADED=1
 
+# Drops the previous block for marker s..e AND the single blank separator
+# line that was written immediately before it. Without that second part,
+# every re-run left its separator behind and the file grew by one blank
+# line per run (a real leak into .zshrc/.bashrc/lua configs on every
+# archreapply / --reinstall). "print x" prints an empty line (x is
+# unset) so the program needs no quotes and survives shell nesting.
+_TDE_IA_AWK='$0==s{skip=1;pend=0;next} skip{if($0==e)skip=0;next} {if(pend){print x;pend=0} if(length($0)==0){pend=1}else{print}} END{if(pend)print x}'
+
 idempotent_append() {
   local file="$1" marker_name="$2" content="$3" comment="${4:-#}"
   local start="$comment >>> termux-dev-env: $marker_name >>>"
@@ -17,7 +25,7 @@ idempotent_append() {
   if grep -qF -- "$start" "$file"; then
     local tmp
     tmp="$(mktemp "${file}.XXXXXX")"
-    awk -v s="$start" -v e="$end" '$0==s{skip=1} !skip{print} $0==e{skip=0}' "$file" > "$tmp"
+    awk -v s="$start" -v e="$end" "$_TDE_IA_AWK" "$file" > "$tmp"
     mv "$tmp" "$file"
   fi
 
@@ -46,14 +54,15 @@ idempotent_append_container() {
     --env TDE_IA_PATH="$container_path" \
     --env TDE_IA_MARKER="$marker_name" \
     --env TDE_IA_CONTENT="$content" \
-    --env TDE_IA_COMMENT="$comment" -- sh -c '
+    --env TDE_IA_COMMENT="$comment" \
+    --env TDE_IA_AWK="$_TDE_IA_AWK" -- sh -c '
     f="$HOME/$TDE_IA_PATH"
     mkdir -p "$(dirname "$f")"
     touch "$f"
     start="$TDE_IA_COMMENT >>> termux-dev-env: $TDE_IA_MARKER >>>"
     end="$TDE_IA_COMMENT <<< termux-dev-env: $TDE_IA_MARKER <<<"
     if grep -qF -- "$start" "$f"; then
-      awk -v s="$start" -v e="$end" "\$0==s{skip=1} !skip{print} \$0==e{skip=0}" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+      awk -v s="$start" -v e="$end" "$TDE_IA_AWK" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
     fi
     { echo ""; echo "$start"; printf "%s\n" "$TDE_IA_CONTENT"; echo "$end"; } >> "$f"
   '
