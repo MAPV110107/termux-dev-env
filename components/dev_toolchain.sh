@@ -11,6 +11,7 @@ phase4_sync_and_install_toolchain() {
   # Mobile networks drop mid-request often enough that a single pacman
   # attempt isn't reliable — same reasoning as the rootfs tarball
   # download (lib/network.sh), just applied to pacman itself.
+  log_info "(pacman -Syu runs under proot, not a real kernel — systemd/mkinitcpio/firmware/udev warnings below are expected noise, not install failures; see docs/TROUBLESHOOTING.md)"
   retry_with_backoff 3 15 \
     proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
     log_fatal_code 410 "pacman -Syu failed inside $TDE_DISTRO_NAME after 3 attempts — likely a network/mirror issue (mirror.archlinuxarm.org timeouts are common on mobile connections), not a package problem. See docs/TROUBLESHOOTING.md's 'mirror timeouts' section, then re-run ./core.sh to retry."
@@ -94,6 +95,38 @@ phase4_install_paru() {
     log_warn "paru package built but install failed (pacman -U) — retry later with: proot-distro login $TDE_DISTRO_NAME -- sh -c 'pacman -U --noconfirm /tmp/paru-bin/*.pkg.tar.*'"
     return 1
   }
+
+  # paru-bin is a prebuilt binary someone else compiled once against
+  # whatever libalpm existed at the time — on a rolling release, a later
+  # pacman -Syu (this phase's own first step) can move libalpm to a new
+  # soname the binary never knew about ("libalpm.so.15: cannot open
+  # shared object file", seen on a real device). Compiling the plain
+  # `paru` AUR package instead links against whatever libalpm is
+  # actually installed right now, so it can't go stale that way — used
+  # only as a fallback since it costs a real Rust compile.
+  if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru --version >/dev/null 2>&1; then
+    log_warn "paru-bin installed but doesn't run (likely a libalpm version mismatch) — rebuilding paru from source instead, this compiles Rust so it's slower"
+    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- bash -c '
+      set -e
+      rm -rf /tmp/paru
+      git clone --depth 1 https://aur.archlinux.org/paru.git /tmp/paru
+      cd /tmp/paru
+      makepkg -s --noconfirm
+    ' < /dev/null || {
+      log_warn "Rebuilding paru from source failed too — AUR packages won't be available. Retry later: proot-distro login $TDE_DISTRO_NAME --user $username -- sh -c 'cd /tmp/paru && makepkg -s --noconfirm'"
+      return 1
+    }
+    proot-distro login "$TDE_DISTRO_NAME" -- bash -c '
+      set -e
+      shopt -s nullglob
+      pkgs=(/tmp/paru/*.pkg.tar.*)
+      [ "${#pkgs[@]}" -gt 0 ]
+      pacman -U --noconfirm "${pkgs[@]}"
+    ' < /dev/null || {
+      log_warn "paru (source) built but install failed (pacman -U) — retry later: proot-distro login $TDE_DISTRO_NAME -- sh -c 'pacman -U --noconfirm /tmp/paru/*.pkg.tar.*'"
+      return 1
+    }
+  fi
 }
 
 # Sensible defaults so the environment is usable right away, not just

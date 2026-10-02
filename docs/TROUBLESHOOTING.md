@@ -357,6 +357,159 @@ container (not a host-side path, and not grepping `:checkhealth`'s own
 UI text, which is free to change across `nvim-treesitter` versions) —
 see the next section for why that pattern matters generally.
 
+## Design change: tmux is no longer part of the login flow (as of 0.5.0)
+
+Earlier versions had `.zshrc` auto-attach a tmux session on login
+(guarded to only fire on an interactive TTY). As of 0.5.0 **tmux is not
+installed by this project at all**, and nothing it writes into
+`.zshrc`/`.bashrc` references it. The flow is strictly
+Termux → `exec proot-distro login <distro> --user <user> --isolated` →
+Arch zsh, with a single `exit` closing the whole Termux session.
+
+Why: tmux added a process in between (Termux → proot → zsh → tmux →
+zsh) that needed two or three `exit`s to actually leave, and on a
+device where a `--reinstall=4` ran before the interactive-shell guard
+existed, exiting tmux could drop into a bare, theme-less `localhost%% `
+zsh with no Oh My Zsh loaded — confusing given `archhealth` reported
+everything `[OK]`.
+
+If you installed an older version and still have tmux auto-attaching:
+```bash
+proot-distro login archarm --user <your-username> -- sh -c '
+  sed -i "/tmux attach\|tmux new\|exec tmux/d" ~/.zshrc
+'
+```
+Then re-run `./core.sh --reinstall=4` to pick up the current (tmux-free)
+runtime block. tmux itself, if already installed, is left alone — this
+only removes the auto-attach, never uninstalls the package.
+
+## `exec proot-distro login` leaves me stuck with no Termux shell when the container is broken
+
+As of 0.5.0 the launcher runs `proot-distro login ... --user ... -- true`
+as a quick smoke test *before* committing to `exec` — if that fails, you
+stay in a normal Termux prompt with a one-line hint (`archdiag`, or
+`TDE_SKIP_LAUNCHER=1 zsh`) instead of `exec`-ing into a login that
+immediately errors out with no shell left behind. If you're on an older
+clone and already stuck: open a **new** Termux session (the stuck one
+doesn't block new ones) and run `TDE_SKIP_LAUNCHER=1 zsh`.
+
+## Prompt is a bare `localhost%% ` instead of agnoster, even though `archhealth` says Shell is `[OK]`
+
+Two things can cause this, both fixed as of 0.5.0:
+- `ZSH_THEME=` genuinely missing from `.zshrc` (the old `sed` silently
+  does nothing if the line to replace isn't there — same footgun as
+  `DisableSandbox` in `pacman.conf`, documented above). The theme step
+  now inserts the line if it's missing, rather than only ever replacing
+  an existing one.
+- `source $ZSH/oh-my-zsh.sh` missing from `.zshrc` — zsh starts fine,
+  the theme line can even be *correct*, but oh-my-zsh (and therefore the
+  theme and plugins) never actually loads. `phase4_shell_ok` now runs a
+  real interactive `zsh -ic` and checks the live `$ZSH_THEME`/`$ZSH`
+  afterward, not just a text search, so this can't silently pass anymore.
+
+Also likely present on the same install: `fastfetch` printing
+`character not in range` and box-drawing glyphs failing — Arch Linux
+ARM's rootfs ships with `LANG=C`, no UTF-8 locale generated at all. This
+is a locale problem, not a missing-font problem. As of 0.5.0,
+`en_US.UTF-8` is generated and exported automatically. To fix an
+existing install by hand:
+```bash
+proot-distro login archarm -- sh -c '
+  echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
+  locale-gen
+  printf "LANG=en_US.UTF-8\nLC_ALL=en_US.UTF-8\n" > /etc/locale.conf
+'
+```
+
+## Mason shows a rename dialog for `williamboman/mason.nvim`, or install aborts mid-way through Mason
+
+`mason.nvim` and `mason-lspconfig.nvim` moved from the `williamboman`
+GitHub org to `mason-org` in their v2.0.0 release — the old URLs still
+redirect today but relying on a redirect forever is fragile, and v2 also
+**removed** the `automatic_installation` option entirely (replaced by
+`automatic_enable`, which only auto-*enables* an already-installed
+server, not installs one). As of 0.5.0 the LSP plugin spec uses
+`mason-org/*` and `automatic_enable`.
+
+Separately: `mason-lspconfig.nvim` deliberately does **not** run its
+installer at all when Neovim is running `--headless` (upstream #175,
+added specifically to stop a headless run's own install racing against
+something else building in the same session and getting killed mid-way
+by `-c "qa"`). That means Mason-managed servers install the first time
+you open `nvim` for real, not during `./core.sh` itself — expected, not
+a bug. If you want them ready immediately: open `nvim`, `:Lazy sync`,
+and let Mason finish before closing it.
+
+## Extra-keys row (ESC/TAB/CTRL/ALT/arrows) always visible in Termux
+
+As of 0.5.0 the installer writes `extra-keys = []` and
+`use-black-ui = true` to `~/.termux/termux.properties` (only filling in
+whichever of the two isn't already set — never overwrites your own
+customization) and reloads Termux's settings immediately. To change it
+by hand:
+```bash
+echo 'extra-keys = []' >> ~/.termux/termux.properties
+termux-reload-settings
+```
+
+## `paru` is installed but fails with `libalpm.so.1X: cannot open shared object file`
+
+`paru-bin` is a prebuilt binary someone else compiled once against
+whatever `libalpm` existed at the time — a later `pacman -Syu` (which
+Phase 4 runs as its own first step) can move the system to a newer
+`libalpm` soname the binary never knew about. As of 0.5.0, after
+installing `paru-bin` the installer checks that it actually runs
+(`paru --version`); if not, it rebuilds the plain `paru` AUR package
+from source instead, which links against whatever `libalpm` is
+genuinely installed right now and can't go stale that way (slower —
+it's a real Rust compile — but only runs as a fallback). To do the same
+by hand:
+```bash
+proot-distro login archarm --user <your-username> -- sh -c '
+  rm -rf /tmp/paru && git clone --depth 1 https://aur.archlinux.org/paru.git /tmp/paru &&
+  cd /tmp/paru && makepkg -s --noconfirm
+'
+proot-distro login archarm -- sh -c 'pacman -U --noconfirm /tmp/paru/*.pkg.tar.*'
+```
+
+## Nerd Font download is huge (~127MB) or "Termux isn't responding" during font/paru install
+
+As of 0.5.0 the Nerd Font installs via Arch's own `ttf-jetbrains-mono-nerd`
+package (official `extra` repo, architecture `any` — confirmed synced
+to Arch Linux ARM — about 10.5MB) instead of downloading nerd-fonts'
+own release zip, which bundles every style and width variant of the
+font together for the one file this project actually uses (~127MB).
+That download, running at the same time as `paru`'s build and Mason/
+treesitter work, was a real contributor to Termux ANRs on a phone. The
+zip download is kept only as a fallback if the package is ever
+unavailable, with the `find` pattern broadened
+(`*NerdFontMono-Regular.ttf`, then `*NerdFont-Regular.ttf`, then
+`*JetBrainsMono*Regular*.ttf`) so a nerd-fonts asset rename doesn't
+silently skip the install. `phase5_nerdfont_ok` also now checks the
+file is over 100KB, not just that it exists — a 0-byte or truncated
+copy used to pass silently.
+
+## Install stops asking for storage permission, or `termux-setup-storage` prompt appears unnecessarily
+
+As of 0.5.0 this is a warning, not a FATAL that blocks the whole
+install — nothing in the current install flow reads or writes
+`~/storage/shared` (the Arch container lives entirely under
+`$PREFIX/var/lib/proot-distro/...`, and the launcher logs in with
+`--isolated`, which doesn't mount `/sdcard` inside the container
+either way). Grant it later with `termux-setup-storage` only if a
+future file-bridge feature needs it.
+
+## Reticulum/Nomad Network/aria2 ("telecom") didn't install, or I don't want it
+
+As of 0.5.0 telecom is opt-in: set `TDE_WITH_TELECOM=1` before running
+`./core.sh` to include it. Without that, `core.sh` doesn't even run
+that step, `archdiag`/`archhealth` show it as `SKIP` rather than a
+warning, and self-heal won't try to install it either. To add it to an
+already-completed install:
+```bash
+TDE_WITH_TELECOM=1 ./core.sh --reinstall=4
+```
+
 ## `.zshrc` still reads as missing even after the "writing a minimal fallback" warning, or theme/plugin steps keep skipping
 
 An earlier version of this project's fix for the ".zshrc missing" issue

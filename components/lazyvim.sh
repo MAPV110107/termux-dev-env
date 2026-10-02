@@ -32,6 +32,19 @@ _tde_lazy_loaded() {
   echo "$loaded"
 }
 
+# .count is every plugin lazy.nvim's spec registered, whether or not it
+# has loaded yet (most of a LazyVim setup is lazy-loaded on a filetype/
+# command/event that a bare headless run with no buffer never triggers —
+# see phase4_lazyvim_ok's comment on why .loaded alone stays a low bar).
+# A low .count means the starter clone or one of this project's own
+# plugin override files failed to parse, which .loaded alone can't tell
+# apart from "just hasn't loaded anything lazy yet".
+_tde_lazy_count() {
+  local count
+  count="$(_tde_nvim_headless -c "lua io.stdout:write(tostring(require('lazy').stats().count) .. '\\n') io.stdout:flush()" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)" || true
+  echo "$count"
+}
+
 phase4_ensure_neovim() {
   log_info "Installing neovim and editor-adjacent tools (ripgrep, fd, lazygit)"
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
@@ -115,6 +128,12 @@ phase4_write_options_overrides() {
   local username
   username="$(state_get ARCH_USERNAME)"
   idempotent_append_container "$TDE_DISTRO_NAME" "$username" ".config/nvim/lua/config/options.lua" "options" '
+-- Declares the Nerd Font this project installs (see nerdfonts.sh) so
+-- plugins that only draw ASCII fallbacks without it (mini.icons,
+-- bufferline, lualine) draw real glyphs instead. termguicolors is
+-- required for any of that to render in color at all inside Termux.
+vim.g.have_nerd_font = true
+vim.opt.termguicolors = true
 vim.opt.emoji = false
 vim.opt.ambiwidth = "single"
 vim.diagnostic.config({
@@ -199,7 +218,7 @@ return {
 
   -- Mason package manager for language servers, formatters, and linters
   {
-    "williamboman/mason.nvim",
+    "mason-org/mason.nvim",
     opts = {
       ensure_installed = {
         "bash-language-server",
@@ -217,7 +236,7 @@ return {
   },
 
   {
-    "williamboman/mason-lspconfig.nvim",
+    "mason-org/mason-lspconfig.nvim",
     opts = {
       ensure_installed = {
         "bashls",
@@ -231,7 +250,18 @@ return {
         "html",
         "cssls",
       },
-      automatic_installation = true,
+      -- automatic_installation was removed in mason-lspconfig v2 (no
+      -- longer compatible with native vim.lsp.config()); its replacement,
+      -- automatic_enable, only auto-*enables* an already-installed
+      -- server, it doesn't install one. Installing still happens via
+      -- ensure_installed above — but mason-lspconfig deliberately does
+      -- NOT run that in `nvim --headless` (upstream #175, added
+      -- specifically to stop a headless run racing its own install
+      -- against something like this project's own treesitter
+      -- pre-install and getting killed mid-build by `-c "qa"`), so
+      -- these installs land the first time the person opens nvim for
+      -- real, not during ./core.sh itself. That's expected, not a bug.
+      automatic_enable = true,
     },
   },
 
@@ -469,12 +499,22 @@ phase4_lazyvim_run() {
 # alongside nvim itself resolving is the part that's actually checkable
 # from a bare headless run.
 phase4_lazyvim_ok() {
-  local username loaded ok=1
+  local username loaded count ok=1
   username="$(state_get ARCH_USERNAME)"
   [ -n "$username" ] || { log_warn "post-check: no ARCH_USERNAME in state"; return 1; }
 
   if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- test -f "/home/$username/.config/nvim/lua/config/options.lua" 2>/dev/null; then
     log_warn "post-check: ~/.config/nvim/lua/config/options.lua is missing inside the container"
+    ok=0
+  fi
+  # .count (every plugin lazy's spec registered) catches a broken starter
+  # clone or a plugin-override file that failed to parse; .loaded alone
+  # can't, since a bare headless run with no buffer never triggers most
+  # of a LazyVim setup's filetype/command/event-based lazy loading — a
+  # low .loaded is expected there, not a sign anything is wrong.
+  count="$(_tde_lazy_count)"
+  if ! { [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -ge 10 ]; }; then
+    log_warn "post-check: lazy.nvim only registered ${count:-0} plugins (expected the full LazyVim spec, well over 10) — the starter clone or a plugin override file likely failed to parse"
     ok=0
   fi
   loaded="$(_tde_lazy_loaded)"

@@ -59,6 +59,21 @@ diagnose_proot_functional() {
   if proot true >/dev/null 2>&1; then echo ok; else echo failed; fi
 }
 
+# Read-only: zram on Android is managed by the vendor kernel/init, not
+# by the app layer, and creating or resizing a device needs root this
+# project never has or asks for — modprobe/mknod are deliberately never
+# attempted here. This only records whatever /sys already exposes, for
+# phase 5's report and a future archdiag diff; "none" just means the
+# device's swap (if any) isn't zram-backed, not that anything failed.
+diagnose_zram_mb() {
+  local disksize
+  if [ -r /sys/block/zram0/disksize ]; then
+    disksize="$(cat /sys/block/zram0/disksize 2>/dev/null)"
+    [ -n "$disksize" ] && [ "$disksize" -gt 0 ] 2>/dev/null && echo "$((disksize / 1024 / 1024))" && return 0
+  fi
+  echo "none"
+}
+
 phase2_run() {
   log_info "=== Phase 2: environment diagnostics ==="
 
@@ -98,6 +113,11 @@ phase2_run() {
   log_info "proot functional test: ${proot_ok}"
   [ "$proot_ok" = "ok" ] || \
     log_fatal "proot cannot execute on this device (ptrace likely blocked by the kernel) — cannot continue"
+
+  local zram_mb
+  zram_mb="$(diagnose_zram_mb)"
+  kv_set "$TDE_DIAG_FILE" ZRAM_MB "$zram_mb"
+  log_info "zram: ${zram_mb}$([ "$zram_mb" != "none" ] && echo MB)"
 
   kv_set "$TDE_DIAG_FILE" DIAG_TIMESTAMP "$(date +%Y%m%d_%H%M%S)"
 

@@ -46,7 +46,32 @@ phase3_install_termux_autosuggestions() {
 phase3_configure_termux_zshrc() {
   grep -q "zsh-autosuggestions" "$TDE_ZSHRC" 2>/dev/null || \
     sed -i 's/^plugins=(\(.*\))/plugins=(\1 zsh-autosuggestions)/' "$TDE_ZSHRC"
-  sed -i 's/^ZSH_THEME=.*/ZSH_THEME="agnoster"/' "$TDE_ZSHRC"
+  # sed's s/// silently does nothing if ZSH_THEME= isn't there to match
+  # (same footgun as phase3_disable_pacman_sandbox) — insert it instead
+  # of leaving a themeless prompt that looks like it "should" have worked.
+  if grep -q "^ZSH_THEME=" "$TDE_ZSHRC" 2>/dev/null; then
+    sed -i 's/^ZSH_THEME=.*/ZSH_THEME="agnoster"/' "$TDE_ZSHRC"
+  else
+    echo 'ZSH_THEME="agnoster"' >> "$TDE_ZSHRC"
+  fi
+  grep -q "DEFAULT_USER=" "$TDE_ZSHRC" 2>/dev/null || \
+    echo 'export DEFAULT_USER="$USER"' >> "$TDE_ZSHRC"
+}
+
+# Termux shows its extra-keys row (ESC/TAB/CTRL/ALT/arrows) by default;
+# most people running a full-screen zsh+LazyVim setup already have
+# their own keyboard-adjacent workflow (or Neovim's own which-key) and
+# don't need it eating vertical space permanently. Only writes values
+# that are still unset — never overwrites customizations the person
+# already made. termux-reload-settings applies it immediately, same as
+# phase4_extract_and_install_nerdfont's font reload.
+phase3_configure_termux_ui() {
+  local props="$HOME/.termux/termux.properties"
+  mkdir -p "$HOME/.termux"
+  touch "$props"
+  grep -q "^extra-keys" "$props" 2>/dev/null || echo "extra-keys = []" >> "$props"
+  grep -q "^use-black-ui" "$props" 2>/dev/null || echo "use-black-ui = true" >> "$props"
+  command -v termux-reload-settings >/dev/null 2>&1 && termux-reload-settings
 }
 
 # chsh needs the FULL path in Termux ("chsh -s zsh" fails with "not an
@@ -83,7 +108,16 @@ if [ -f "$TDE_LAUNCHER_CONFIG" ] && [ -z "\${PROOT_ACTIVE:-}" ] && [ -z "\${TDE_
   # missing user), there's no Termux shell left to fall back into — the
   # session just ends. Recover with a fresh Termux session and
   # TDE_SKIP_LAUNCHER=1, or use a second session and 'archkill'.
-  exec proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
+  # Quick, cheap smoke test before committing to exec: if the container
+  # or the user account is broken, this fails fast into a normal Termux
+  # prompt with a clear next step, instead of exec-ing into a login that
+  # errors out and leaves nothing behind (see the trade-off note above).
+  if proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" -- true 2>/dev/null; then
+    exec proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
+  else
+    echo "termux-dev-env: could not log into '\$ARCH_DISTRO_ALIAS' as '\$ARCH_USERNAME' — staying in Termux."
+    echo "Try: archdiag   (or TDE_SKIP_LAUNCHER=1 zsh to always land here)"
+  fi
 fi
 EOF
 )"
@@ -99,12 +133,9 @@ phase3_install_archkill() {
 # Force-closes the Arch container without saving unsaved work.
 [ -f "$TDE_LAUNCHER_CONFIG" ] && . "$TDE_LAUNCHER_CONFIG"
 DISTRO="\${TDE_DISTRO_NAME:-\${ARCH_DISTRO_ALIAS:-${TDE_DISTRO_NAME:-archarm}}}"
-echo "Active tmux sessions inside Arch (these will be lost):"
-proot-distro login "\$DISTRO" --user "\${ARCH_USERNAME:-user}" -- tmux list-sessions 2>/dev/null || echo "  (none found)"
-echo "This will close Arch without saving unsaved sessions. Continue? [y/N]"
+echo "This will close Arch without saving unsaved work (open editors, running commands). Continue? [y/N]"
 read -r confirm
 [ "\$confirm" = "y" ] || exit 0
-proot-distro login "\$DISTRO" --user "\${ARCH_USERNAME:-user}" -- tmux kill-server 2>/dev/null
 proot-distro kill "\$DISTRO"
 echo "Arch closed."
 EOF
@@ -115,7 +146,7 @@ phase3_setup_launcher_run() {
   log_info "=== Phase 3, step 3: launcher setup ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install zsh+oh-my-zsh+agnoster+autosuggestions in Termux, set it as default shell, write launcher config, append idempotent snippet to .bashrc and .zshrc, install archkill to \$PREFIX/bin"
+    log_info "[dry-run] would install zsh+oh-my-zsh+agnoster+autosuggestions in Termux, set extra-keys=[] and black UI, set it as default shell, write launcher config, append idempotent snippet to .bashrc and .zshrc, install archkill to \$PREFIX/bin"
     return 0
   fi
 
@@ -123,6 +154,7 @@ phase3_setup_launcher_run() {
   phase3_install_termux_ohmyzsh
   phase3_install_termux_autosuggestions
   phase3_configure_termux_zshrc
+  phase3_configure_termux_ui
   phase3_set_termux_default_shell
 
   phase3_write_launcher_config
@@ -139,5 +171,6 @@ phase3_launcher_ok() {
     grep -qF -- "termux-dev-env: launcher" "$TDE_ZSHRC" 2>/dev/null && \
     [ -x "$PREFIX/bin/archkill" ] && \
     [ -d "$HOME/.oh-my-zsh" ] && \
-    grep -q 'ZSH_THEME="agnoster"' "$TDE_ZSHRC" 2>/dev/null
+    grep -q 'ZSH_THEME="agnoster"' "$TDE_ZSHRC" 2>/dev/null && \
+    grep -q "^extra-keys" "$HOME/.termux/termux.properties" 2>/dev/null
 }

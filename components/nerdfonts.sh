@@ -6,8 +6,42 @@
 [ -n "${TDE_NERDFONTS_LOADED:-}" ] && return 0
 TDE_NERDFONTS_LOADED=1
 
+# Primary: ttf-jetbrains-mono-nerd, Arch's own official package (extra
+# repo, architecture "any" — confirmed synced to Arch Linux ARM, same as
+# the plain, non-Nerd ttf-jetbrains-mono). ~10.5 MB versus downloading
+# nerd-fonts' own release zip, which bundles every style and width
+# variant of the font together for the one file this project actually
+# installs (~127 MB) — that size alone made the download a real
+# contributor to Termux ANRs on a phone alongside paru/Mason/treesitter
+# all running at once. Falls back to the old zip download only if the
+# package is ever unavailable.
+TDE_NERDFONT_PKG="ttf-jetbrains-mono-nerd"
 TDE_NERDFONT_URL="https://github.com/ryanoasis/nerd-fonts/releases/latest/download/JetBrainsMono.zip"
 TDE_NERDFONT_TMPDIR="$HOME/.cache/termux-dev-env/nerdfont"
+
+phase4_install_nerdfont_pkg() {
+  proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed "$TDE_NERDFONT_PKG" 2>>"$TDE_LOG_FILE" || return 1
+
+  # Read the real installed path from the package itself (pacman -Ql)
+  # rather than assuming Arch's font-packaging layout matches
+  # nerd-fonts' own upstream zip structure — they don't have to agree.
+  local rel_path
+  rel_path="$(proot-distro login "$TDE_DISTRO_NAME" -- pacman -Ql "$TDE_NERDFONT_PKG" 2>/dev/null \
+    | awk '{print $2}' | grep -iE 'NerdFontMono-Regular\.ttf$' | head -n1)"
+  if [ -z "$rel_path" ]; then
+    rel_path="$(proot-distro login "$TDE_DISTRO_NAME" -- pacman -Ql "$TDE_NERDFONT_PKG" 2>/dev/null \
+      | awk '{print $2}' | grep -iE '\.ttf$' | grep -iE 'regular' | head -n1)"
+  fi
+  [ -n "$rel_path" ] || return 1
+
+  mkdir -p "$HOME/.termux"
+  # rel_path is already absolute (pacman -Ql's own output) — no ~, so no
+  # risk of the host-side tilde-expansion bug documented in
+  # docs/TROUBLESHOOTING.md. The '>' redirect is deliberately host-side
+  # here: ~/.termux/font.ttf is a real Termux path, not a container one.
+  proot-distro login "$TDE_DISTRO_NAME" -- cat "$rel_path" > "$HOME/.termux/font.ttf" 2>/dev/null || return 1
+  [ -s "$HOME/.termux/font.ttf" ]
+}
 
 phase4_ensure_unzip() {
   command -v unzip >/dev/null 2>&1 && return 0
@@ -32,27 +66,43 @@ phase4_extract_and_install_nerdfont() {
     return 1
   }
 
-  local mono_ttf
-  mono_ttf="$(find "$TDE_NERDFONT_TMPDIR" -iname '*NerdFontMono-Regular.ttf' | head -n1)"
+  # In priority order: the Mono variant specifically (monospace-safe icon
+  # width), then any NerdFont-patched regular, then a last-resort loose
+  # match on the family name — broadened from a single fixed pattern so
+  # a nerd-fonts release renaming its assets doesn't silently skip the
+  # install entirely.
+  local mono_ttf pattern
+  mono_ttf=""
+  for pattern in '*NerdFontMono-Regular.ttf' '*NerdFont-Regular.ttf' '*JetBrainsMono*Regular*.ttf'; do
+    mono_ttf="$(find "$TDE_NERDFONT_TMPDIR" -iname "$pattern" | head -n1)"
+    [ -n "$mono_ttf" ] && break
+  done
   if [ -z "$mono_ttf" ]; then
-    log_warn "Mono variant not found in the archive — skipping font install"
+    log_warn "No matching font file found in the archive — skipping font install"
     return 1
   fi
 
   mkdir -p "$HOME/.termux"
   cp "$mono_ttf" "$HOME/.termux/font.ttf"
-  log_info "Nerd Font (Mono variant) installed to ~/.termux/font.ttf"
+  log_info "Nerd Font installed to ~/.termux/font.ttf (fallback zip download)"
 }
 
 phase4_nerdfonts_run() {
   log_info "=== Phase 4: Nerd Font install ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would download JetBrainsMono Nerd Font, extract the Mono variant, install to ~/.termux/font.ttf"
+    log_info "[dry-run] would install $TDE_NERDFONT_PKG via pacman (fallback: download+extract JetBrainsMono Nerd Font zip), install to ~/.termux/font.ttf"
     return 0
   fi
 
-  if phase4_ensure_unzip && phase4_download_nerdfont && phase4_extract_and_install_nerdfont; then
+  local installed=0
+  if phase4_install_nerdfont_pkg; then
+    installed=1
+  elif phase4_ensure_unzip && phase4_download_nerdfont && phase4_extract_and_install_nerdfont; then
+    installed=1
+  fi
+
+  if [ "$installed" = "1" ]; then
     # termux-reload-settings (part of termux-tools) broadcasts
     # com.termux.app.reload_style, which Termux's own app listens for —
     # it applies font.ttf/colors.properties changes immediately, no

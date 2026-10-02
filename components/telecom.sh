@@ -66,7 +66,11 @@ EOF
 phase4_smoke_test_telecom() {
   local username
   username="$(state_get ARCH_USERNAME)"
-  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rnsd --version >>"$TDE_LOG_FILE" 2>&1; then
+  # ~/.local/bin prepended explicitly — see phase5_rns_ok's comment:
+  # rnsd can land there (pip --user fallback) and a non-interactive
+  # login doesn't source .zshrc's PATH addition for it.
+  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+       sh -c 'PATH="$HOME/.local/bin:$PATH" rnsd --version' >>"$TDE_LOG_FILE" 2>&1; then
     log_info "rnsd responds"
   else
     log_warn "rnsd smoke test failed"

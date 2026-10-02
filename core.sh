@@ -170,14 +170,25 @@ if [ "$(state_get PHASE4_LAZYVIM)" != "1" ]; then
     log_fatal_code 403 "LazyVim did not pass its post-condition check"
   fi
 fi
-if [ "$(state_get PHASE4_TELECOM)" != "1" ]; then
-  # shellcheck source=components/telecom.sh
-  source "$SCRIPT_DIR/components/telecom.sh"
-  if phase4_telecom_run; then
-    state_set PHASE4_TELECOM 1
-  else
-    log_warn "Telecom step incomplete — will retry on the next run"
+# Opt-in (TDE_WITH_TELECOM=1): Reticulum/Nomad Network + aria2 are a
+# mesh-networking/download stack most people installing a general dev
+# environment don't need, and it's pulled in real weight (a pip install,
+# an AUR-adjacent rnsd/nomadnet, aria2) for something off by default
+# elsewhere in the ecosystem. Opting in explicitly also means a plain
+# first-time install has one less thing that can go wrong (see
+# phase5_rns_ok's own PATH caveat) before reaching LazyVim.
+if [ "${TDE_WITH_TELECOM:-0}" = "1" ]; then
+  if [ "$(state_get PHASE4_TELECOM)" != "1" ]; then
+    # shellcheck source=components/telecom.sh
+    source "$SCRIPT_DIR/components/telecom.sh"
+    if phase4_telecom_run; then
+      state_set PHASE4_TELECOM 1
+    else
+      log_warn "Telecom step incomplete — will retry on the next run"
+    fi
   fi
+else
+  log_info "Skipping telecom (Reticulum/Nomad/aria2) — set TDE_WITH_TELECOM=1 before running ./core.sh to include it"
 fi
 if [ "$(state_get PHASE4_FSUTILS)" != "1" ]; then
   # shellcheck source=components/fs_utils.sh
@@ -252,5 +263,12 @@ if [ "$TDE_DRY_RUN" != "1" ] && [ -z "${TDE_NO_AUTO_RESTART:-}" ] && [ -t 0 ] &&
   # out for as long as that session lives. Release and close it first.
   lock_release
   eval "exec ${TDE_LOCK_FD}>&-"
+  # Clears the installer's own scrollback before handing off — otherwise
+  # the restarted shell's launcher prompt (and the Arch session it drops
+  # into) appears underneath pages of install log the person has no
+  # reason to keep looking at. \033c is a full terminal reset (closer to
+  # how a fresh Termux session actually starts) rather than just
+  # scrolling the log out of view.
+  printf '\\033c'
   exec "${SHELL:-bash}" -l
 fi

@@ -60,8 +60,16 @@ phase1_check_storage_permission() {
   fi
   local test_file="$HOME/storage/shared/.termux-dev-env-write-test"
   if ! [ -d "$HOME/storage/shared" ] || ! ( touch "$test_file" 2>/dev/null && rm -f "$test_file" ); then
+    # Non-blocking: the Arch container lives entirely under
+    # $PREFIX/var/lib/proot-distro/..., and the launcher logs in with
+    # --isolated (which doesn't mount /sdcard inside the container
+    # either way) — nothing in the current install actually reads or
+    # writes ~/storage/shared. This used to be a log_fatal that blocked
+    # the whole install over a permission nothing here needs yet; a
+    # future file-bridge feature (see components/telecom.sh) would be
+    # the thing to gate on this, not Phase 1 itself.
     if command -v termux-setup-storage >/dev/null 2>&1; then
-      log_info "Requesting Termux storage permission via termux-setup-storage..."
+      log_info "Requesting Termux storage permission via termux-setup-storage (optional — nothing in this install needs it yet)..."
       termux-setup-storage
       local retries=5
       while [ "$retries" -gt 0 ]; do
@@ -73,7 +81,7 @@ phase1_check_storage_permission() {
         retries=$((retries - 1))
       done
     fi
-    log_fatal "Storage permission not granted — grant permission in Android settings or run 'termux-setup-storage'"
+    log_warn "Storage permission not granted — continuing anyway, nothing in this install needs it. Run 'termux-setup-storage' later if a future feature needs /sdcard access."
   fi
 }
 

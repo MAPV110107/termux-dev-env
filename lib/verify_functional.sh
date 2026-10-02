@@ -5,13 +5,28 @@
 [ -n "${TDE_VERIFY_FUNCTIONAL_LOADED:-}" ] && return 0
 TDE_VERIFY_FUNCTIONAL_LOADED=1
 
-phase5_nerdfont_ok() { [ -f "$HOME/.termux/font.ttf" ]; }
+# >100KB, not just "exists": a 0-byte or truncated font.ttf (an
+# interrupted copy, a disk-full write) still passes a bare -f check but
+# renders nothing — Termux falls back silently, no error either way.
+# 100KB is well under any real Nerd Font variant (single-digit MB) and
+# well over a truncated/empty file.
+phase5_nerdfont_ok() {
+  [ -f "$HOME/.termux/font.ttf" ] && [ "$(wc -c < "$HOME/.termux/font.ttf")" -gt 102400 ]
+}
 
 phase5_rns_ok() {
   local username
   username="$(state_get ARCH_USERNAME)"
   [ -n "$username" ] || return 1
-  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v rnsd >/dev/null 2>&1
+  # rnsd can land in ~/.local/bin (the pip --user fallback in
+  # telecom.sh's phase4_install_rns_nomadnet) or in the normal
+  # pacman/system PATH (the paru/AUR path) — a bare, non-interactive
+  # 'proot-distro login --user -- command -v rnsd' doesn't source
+  # .zshrc's PATH additions (those only apply to an interactive shell),
+  # so it only ever sees the second case. Prepend it explicitly instead
+  # of depending on login sourcing anything.
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    sh -c 'PATH="$HOME/.local/bin:$PATH" command -v rnsd >/dev/null 2>&1'
 }
 
 phase5_aria2_ok() {
@@ -27,7 +42,12 @@ phase5_self_heal() {
     log_info "Self-heal: retrying Nerd Font install"
     phase4_nerdfonts_run || log_warn "Self-heal did not fix the Nerd Font install"
   fi
-  if ! phase5_rns_ok || ! phase5_aria2_ok; then
+  # Gated the same way core.sh's own Phase 4 step is: telecom is opt-in
+  # (TDE_WITH_TELECOM=1). Without this, self-heal would try installing
+  # it even for someone who never asked for it in the first place, since
+  # phase5_rns_ok/phase5_aria2_ok naturally read as "not ok" when it was
+  # never installed at all.
+  if [ "${TDE_WITH_TELECOM:-0}" = "1" ] && { ! phase5_rns_ok || ! phase5_aria2_ok; }; then
     log_info "Self-heal: retrying telecom install"
     phase4_telecom_run || log_warn "Self-heal did not fully fix telecom"
   fi
@@ -48,9 +68,13 @@ phase5_run_audit() {
   _audit_check "LazyVim"                      CRITICAL phase4_lazyvim_ok
 
   echo "Optional components:" | tee -a "$TDE_REPORT_FILE"
-  _audit_check "Nerd Font"               WARNING phase5_nerdfont_ok
-  _audit_check "Reticulum/Nomad Network" WARNING phase5_rns_ok
-  _audit_check "aria2"                   WARNING phase5_aria2_ok
+  _audit_check "Nerd Font" WARNING phase5_nerdfont_ok
+  if [ "${TDE_WITH_TELECOM:-0}" = "1" ]; then
+    _audit_check "Reticulum/Nomad Network" WARNING phase5_rns_ok
+    _audit_check "aria2"                   WARNING phase5_aria2_ok
+  else
+    echo "  SKIP    Reticulum/Nomad Network, aria2 (telecom is opt-in — set TDE_WITH_TELECOM=1 to include it)" | tee -a "$TDE_REPORT_FILE"
+  fi
 }
 
 phase5_print_summary() {
