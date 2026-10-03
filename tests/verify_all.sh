@@ -31,7 +31,7 @@ echo "== 1b. shellcheck (-S warning) =="
 # extra package nobody needs just to install a dev environment. CI always
 # has it, so the gate is still enforced on every push.
 if command -v shellcheck >/dev/null 2>&1; then
-  sc_out="$(shellcheck -S warning -s bash core.sh lib/*.sh components/*.sh tests/*.sh 2>&1)"
+  sc_out="$(shellcheck -S warning -s bash core.sh lib/*.sh components/*.sh tests/*.sh tests/cases/*.sh 2>&1)"
   if [ -z "$sc_out" ]; then ok "shellcheck clean ($(shellcheck --version | awk '/version:/{print $2}'))"
   else fail "shellcheck"; echo "$sc_out" | head -40; fi
 else

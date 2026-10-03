@@ -1,6 +1,7 @@
 # Code review — termux-dev-env v0.5.0
 
-Reviewed at commit `3b354a4`. **All findings below have since been fixed — see
+Reviewed at commit `3b354a4`. **Every finding below has been fixed (except the README
+length, skipped at your request) — see
 §7 Resolution.**
 
 Reviewed at commit `3b354a4`. ~5,650 lines of Bash across `core.sh`, `lib/` (14 files),
@@ -150,7 +151,23 @@ Suite after the fixes: **round clean, 133 unit checks** (up from 125), including
 regression tests that reproduce 4.1 by sourcing *only* `core.sh`'s unconditional preamble
 and then each interactive component, and assert 4.2's escape sequence byte-for-byte.
 
-Items deliberately left alone: the `http://` mirrors (GPG-verified, mirrors do serve
-http), `kv_get`'s empty-vs-absent conflation (no current caller stores `""`), the
-hardcoded `TDE_LOCK_FD=200`, and the size of `test_pure_logic.sh` — all judgement calls,
-none of them bugs.
+### Second pass — the remaining §5 items
+
+| # | Finding | Fix |
+|---|---|---|
+| 5.4 | Mirrors fetched over `http://` | `phase3_download_and_verify` now tries **https first, http second, per mirror**. GPG verification is unchanged and still the thing that makes the tarball trustworthy; https additionally stops a captive portal or transparent proxy from handing back an error page or truncated body. http stays as a fallback for a skewed device clock or stale `ca-certificates`. A *bad signature* deliberately does **not** retry the other scheme — the bytes are wrong, not the transport — it moves to the next mirror. |
+| 5.5 | `kv_get` conflates empty with absent | Contract documented at the function, plus a new **`kv_has`** for the "is it set at all?" question. `kv_get`'s behaviour is intentionally unchanged: `state_get` callers rely on "missing or empty → default". |
+| 5.6 | Hardcoded `TDE_LOCK_FD=200` | `lock_acquire` now allocates with `exec {TDE_LOCK_FD}>` (a free fd ≥ 10), falling back to 200 on a shell too old to support it. Still exported, so `core.sh`'s pre-`exec` `exec ${TDE_LOCK_FD}>&-` keeps working; `lock_release` is now a no-op when nothing was acquired. |
+| 5.7 | `test_pure_logic.sh` was 1,600 lines | Split into **35 files under `tests/cases/`**, one per `=== section ===`. The runner is now 85 lines and *sources* them in order — deliberately, because the suite is one continuous harness (later cases depend on stubs and state from earlier ones, and every `assert_*` updates the shared `$FAILURES`). Verified by diffing the full suite output before and after: **identical except the timestamp**. |
+| 5.8 | README length | **Skipped at your request.** |
+
+The pacman mirrorlist written into the container (`phase3_write_pacman_mirrorlist`) is
+left on `http://` on purpose: pacman verifies every package with its own signatures, and
+inside proot an https failure (clock skew, container cert store) has no fallback path the
+way the installer's own download does.
+
+Final state: **round clean, shellcheck clean, 148 unit checks** (was 125 at the start).
+
+Items deliberately left alone: the README's length (skipped at your request) and the
+container-side pacman mirrorlist's scheme (reasoned above). Everything else in this
+review is fixed and covered by a test.

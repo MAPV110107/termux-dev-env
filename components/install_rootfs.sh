@@ -42,7 +42,8 @@ phase3_import_signing_key() {
 # historical tarballs the way git keeps commits. To pin to a known-good
 # version, host your OWN verified copy (tarball + matching .sig) anywhere
 # reachable and set TDE_ROOTFS_URL_OVERRIDE to its URL — GPG verification
-# still applies, this only changes where the file comes from.
+# still applies, this only changes where the file comes from (use an
+# https URL there if you host it yourself — the scheme is taken verbatim).
 phase3_download_and_verify() {
   local mirror tarball_url sig_url
 
@@ -59,27 +60,43 @@ phase3_download_and_verify() {
     log_fatal_code 313 "Pinned rootfs override failed to download or verify: $tarball_url"
   fi
 
+  # https first, http second, per mirror. GPG verification below is what
+  # actually makes the tarball trustworthy (that has always been true and
+  # is unchanged), so http is not a vulnerability here — but https also
+  # stops a transparent proxy or captive portal on a mobile network from
+  # silently handing back an error page or a truncated body, which is a
+  # real and reported failure mode. The http attempt is kept as a
+  # fallback precisely because https can fail for reasons unrelated to
+  # the mirror: a device clock far enough off to invalidate the
+  # certificate, or a Termux install whose ca-certificates package is
+  # stale. Falling back costs one extra curl attempt and never weakens
+  # the signature check.
   for mirror in "${TDE_ARM_MIRRORS[@]}"; do
-    tarball_url="http://${mirror}/os/ArchLinuxARM-aarch64-latest.tar.gz"
-    sig_url="${tarball_url}.sig"
-    log_info "Trying mirror: $mirror"
+    for scheme in https http; do
+      tarball_url="${scheme}://${mirror}/os/ArchLinuxARM-aarch64-latest.tar.gz"
+      sig_url="${tarball_url}.sig"
+      log_info "Trying mirror: $mirror over $scheme"
 
-    if ! retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url"; then
-      log_warn "Download failed from $mirror, trying next mirror"
+      if ! retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url"; then
+        log_warn "Download failed from $mirror over $scheme"
+        rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+        continue
+      fi
+      if ! retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url"; then
+        log_warn "Signature download failed from $mirror over $scheme"
+        rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+        continue
+      fi
+      if gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then
+        log_info "GPG signature verified against $mirror ($scheme)"
+        return 0
+      fi
+      # A failed signature is NOT retried over the other scheme: the
+      # bytes are wrong, not the transport. Move to the next mirror.
+      log_warn "GPG verification failed for $mirror — discarding, trying next mirror"
       rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
-      continue
-    fi
-    if ! retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url"; then
-      log_warn "Signature download failed from $mirror, trying next mirror"
-      rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
-      continue
-    fi
-    if gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then
-      log_info "GPG signature verified against $mirror"
-      return 0
-    fi
-    log_warn "GPG verification failed for $mirror — discarding, trying next mirror"
-    rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+      break
+    done
   done
 
   log_fatal_code 314 "Could not download and verify the Arch Linux ARM rootfs from any mirror"

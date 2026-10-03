@@ -10,11 +10,25 @@ kv_init() {
   [ -f "$file" ] || : > "$file"
 }
 
+# NOTE: a key explicitly set to the empty string is reported as absent,
+# i.e. kv_get returns the default for both "KEY=" and no KEY line at all.
+# Every value this project stores is a 0/1 flag or a non-empty string
+# (usernames, paths), so the two cases are equivalent today. If a caller
+# ever needs to store a meaningful "", use kv_has to disambiguate rather
+# than changing this function's contract — callers like state_get rely on
+# the current "missing or empty -> default" behaviour.
 kv_get() {
   local file="$1" key="$2" default="${3:-}"
   local val
   val="$(grep -m1 "^${key}=" "$file" 2>/dev/null | cut -d= -f2- || true)"
   echo "${val:-$default}"
+}
+
+# True when the key line exists at all, regardless of its value — the
+# "is it set?" question kv_get deliberately cannot answer.
+kv_has() {
+  local file="$1" key="$2"
+  [ -f "$file" ] && grep -q "^${key}=" "$file" 2>/dev/null
 }
 
 # Atomic write-then-rename so a crash mid-write never truncates the file.
