@@ -4,7 +4,10 @@
 #        tests/verify_all.sh --loop 5   (repeat up to N rounds, stop after 2 clean in a row)
 set -uo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-cd "$ROOT"
+cd "$ROOT" || exit 1
+# The implementation lives under src/ (core.sh at the root is a thin
+# launcher). Rounds that inspect or source the sources run from here.
+SRC="$ROOT/src"
 
 if [ "${1:-}" = "--loop" ]; then
   max="${2:-5}"; clean=0
@@ -31,7 +34,7 @@ echo "== 1b. shellcheck (-S warning) =="
 # extra package nobody needs just to install a dev environment. CI always
 # has it, so the gate is still enforced on every push.
 if command -v shellcheck >/dev/null 2>&1; then
-  sc_out="$(shellcheck -S warning -s bash core.sh lib/*.sh components/*.sh tests/*.sh tests/cases/*.sh 2>&1)"
+  sc_out="$(shellcheck -S warning -s bash core.sh src/core.sh src/lib/*.sh src/components/*.sh tests/*.sh tests/cases/*.sh 2>&1)"
   if [ -z "$sc_out" ]; then ok "shellcheck clean ($(shellcheck --version | awk '/version:/{print $2}'))"
   else fail "shellcheck"; echo "$sc_out" | head -40; fi
 else
@@ -80,7 +83,7 @@ echo "== 5. bare ~/ passed to proot-distro (would expand on the Termux side) =="
 python3 - << 'PY' || FAILS=$((FAILS + 1))
 import re, glob, sys
 bad = []
-for f in glob.glob('components/*.sh') + glob.glob('lib/*.sh') + ['core.sh']:
+for f in glob.glob('src/components/*.sh') + glob.glob('src/lib/*.sh') + ['src/core.sh']:
     txt = open(f).read()
     # join backslash continuations, then look at each logical proot-distro command line
     txt = re.sub(r'\\\n\s*', ' ', txt)
@@ -100,6 +103,7 @@ PY
 echo "== 6. generated maintenance scripts: syntax + every function they call is sourced =="
 TMPP="$(mktemp -d)"; export PREFIX="$TMPP/usr" HOME="$TMPP/home"; mkdir -p "$PREFIX/bin" "$HOME"
 (
+  cd "$SRC" || exit 1
   source lib/error_handling.sh; source lib/logging.sh; log_init >/dev/null
   source lib/kv.sh; source lib/state.sh; source lib/network.sh; source lib/idempotent_append.sh
   source lib/container_paths.sh
@@ -119,7 +123,7 @@ done
 # never call phase5_run at all (only phase5_run_audit). A first version
 # of this check did exactly that and flagged a function that was never
 # actually going to be invoked.
-python3 - "$PREFIX/bin" "$ROOT" << 'PY' || FAILS=$((FAILS + 1))
+python3 - "$PREFIX/bin" "$SRC" << 'PY' || FAILS=$((FAILS + 1))
 import re, sys, os
 binp, root = sys.argv[1:3]
 
@@ -181,7 +185,7 @@ echo "== 7. every E-code is documented, none duplicated for different messages =
 python3 - << 'PY' || FAILS=$((FAILS + 1))
 import re, glob, sys
 codes = {}
-for f in glob.glob('components/*.sh') + glob.glob('lib/*.sh') + ['core.sh']:
+for f in glob.glob('src/components/*.sh') + glob.glob('src/lib/*.sh') + ['src/core.sh']:
     for m in re.finditer(r'log_fatal_code (\d+) "([^"]{0,40})', open(f).read()):
         codes.setdefault(m.group(1), set()).add(f)
 doc = open('docs/ERROR_CODES.md').read()
@@ -215,7 +219,7 @@ rm -rf "$FAKE"
 echo "== 9. idempotency: helpers applied 3x change nothing after the first =="
 T="$(mktemp -d)"; export HOME="$T"
 (
-  source lib/idempotent_append.sh
+  source src/lib/idempotent_append.sh
   f="$T/x.conf"; echo base > "$f"
   idempotent_append "$f" blk "content"; h1="$(md5sum < "$f")"
   idempotent_append "$f" blk "content"; idempotent_append "$f" blk "content"; h3="$(md5sum < "$f")"

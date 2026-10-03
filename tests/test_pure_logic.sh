@@ -8,7 +8,13 @@
 
 set -u
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_DIR="$(cd "$TESTS_DIR/.." && pwd)"
+# The sources moved under src/ (see the 2026-10-03 report). SCRIPT_DIR
+# points at src/ so every "$SCRIPT_DIR/lib/..." and
+# "$SCRIPT_DIR/components/..." path in the cases keeps working, and
+# TDE_PROJECT_ROOT is there for the few things that live above it
+# (VERSION, README, the ./core.sh launcher).
+TDE_PROJECT_ROOT="$(cd "$TESTS_DIR/.." && pwd)"
+SCRIPT_DIR="$TDE_PROJECT_ROOT/src"
 export TDE_ROOT="$SCRIPT_DIR"
 export TDE_DISTRO_NAME="archarm"
 

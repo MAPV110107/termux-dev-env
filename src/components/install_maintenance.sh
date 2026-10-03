@@ -22,10 +22,14 @@ phase6_install_shared_copy() {
   # ${var:?} guard: if TDE_SHARE_DIR were ever empty (an unset PREFIX in a
   # future caller), the bare form would expand to "rm -rf /lib /components".
   rm -rf "${TDE_SHARE_DIR:?}/lib" "${TDE_SHARE_DIR:?}/components"
-  cp -r "$TDE_ROOT/lib" "$TDE_SHARE_DIR/lib"
-  cp -r "$TDE_ROOT/components" "$TDE_SHARE_DIR/components"
+  # Source now lives under src/, but the installed copy keeps the flat
+  # lib/ + components/ layout the generated commands expect — they cd
+  # into $TDE_SHARE_DIR and `source lib/...`, so nothing in them has to
+  # know about the repository's directory structure.
+  cp -r "$TDE_SRC_DIR/lib" "$TDE_SHARE_DIR/lib"
+  cp -r "$TDE_SRC_DIR/components" "$TDE_SHARE_DIR/components"
   cp "$TDE_ROOT/VERSION" "$TDE_SHARE_DIR/VERSION" 2>/dev/null || true
-  cp "$TDE_ROOT/core.sh" "$TDE_SHARE_DIR/core.sh" 2>/dev/null || true
+  cp "$TDE_SRC_DIR/core.sh" "$TDE_SHARE_DIR/core.sh" 2>/dev/null || true
   chmod +x "$TDE_SHARE_DIR/core.sh" 2>/dev/null || true
 }
 

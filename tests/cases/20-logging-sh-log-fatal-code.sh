@@ -20,8 +20,9 @@ assert_pass "log_fatal_code tags the message and writes last_error.env" bash -c 
 "
 # Every E-code in the source must be documented in docs/ERROR_CODES.md.
 assert_pass "every log_fatal_code used in the source is documented in ERROR_CODES.md" bash -c "
+  # Sources live in src/ (SCRIPT_DIR); the docs stay at the project root.
   cd '$SCRIPT_DIR'
   for c in \$(grep -rhoE 'log_fatal_code [0-9]+' core.sh components lib | awk '{print \$2}' | sort -u); do
-    grep -q \"E\$c\" docs/ERROR_CODES.md || { echo \"undocumented: E\$c\" >&2; exit 1; }
+    grep -q \"E\$c\" '$TDE_PROJECT_ROOT/docs/ERROR_CODES.md' || { echo \"undocumented: E\$c\" >&2; exit 1; }
   done
 "

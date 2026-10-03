@@ -34,7 +34,7 @@ proot-distro() {
 (
   source "$SCRIPT_DIR/lib/error_handling.sh"; source "$SCRIPT_DIR/lib/logging.sh"; log_init >/dev/null
   source "$SCRIPT_DIR/lib/kv.sh"; source "$SCRIPT_DIR/lib/state.sh"
-  TDE_DISTRO_NAME=archarm
+  export TDE_DISTRO_NAME=archarm
   state_set ARCH_USERNAME kattze >/dev/null
   source "$SCRIPT_DIR/components/shell_setup.sh"
   phase4_write_zshrc_extras
