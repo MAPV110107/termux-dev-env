@@ -5,7 +5,12 @@
 [ -n "${TDE_CREATE_USER_LOADED:-}" ] && return 0
 TDE_CREATE_USER_LOADED=1
 
-TDE_RESERVED_USERNAMES="root bin daemon sys adm lp mail news uucp man proxy www-data backup list irc gnats nobody systemd-network systemd-resolve messagebus sshd admin"
+# Names that already exist (or are reserved) in an Arch Linux ARM base
+# install, plus the systemd/dbus/service accounts that appear as soon as
+# anything is installed. useradd would fail on these with a bare
+# "user already exists" halfway through the install; catching them at
+# the prompt turns that into an immediate, correctable message.
+TDE_RESERVED_USERNAMES="root bin daemon sys sync games man lp mail news uucp proxy www-data backup list irc gnats nobody adm tty disk floppy dialout cdrom audio video utmp usbmus plugdev staff users wheel sudo ftp http dbus messagebus polkitd systemd-network systemd-resolve systemd-timesync systemd-journal systemd-coredump systemd-oom nscd avahi colord git svn rtkit usbmux geoclue sshd ssh openssh nvidia docker named ntp uuidd admin administrator operator guest default test user0 halt shutdown"
 
 _username_is_valid() {
   local name="$1" reserved

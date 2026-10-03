@@ -172,8 +172,13 @@ assert_pass "write_options_overrides uses idempotent_append_container, not a hos
   TDE_DISTRO_NAME=archarm
   state_set ARCH_USERNAME kattze >/dev/null
   source '$SCRIPT_DIR/components/lazyvim.sh'
-  LOGGED_IN=0
-  proot-distro() { LOGGED_IN=1; return 0; }
+  # Marker FILE, not a variable: idempotent_append_container now pipes
+  # the block in on stdin (printf ... | proot-distro ...), which runs
+  # the mock in a subshell — a variable it sets would never be visible
+  # out here, regardless of whether the function did the right thing.
+  MARKER='$TESTROOT/lazyvim_logged_in'
+  rm -f \"\$MARKER\"
+  proot-distro() { touch \"\$MARKER\"; cat >/dev/null 2>&1 || true; return 0; }
   phase4_write_options_overrides
-  [ \"\$LOGGED_IN\" = 1 ]
+  [ -f \"\$MARKER\" ]
 "

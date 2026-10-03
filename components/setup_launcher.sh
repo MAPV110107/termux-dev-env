@@ -58,20 +58,61 @@ phase3_configure_termux_zshrc() {
     echo 'export DEFAULT_USER="$USER"' >> "$TDE_ZSHRC"
 }
 
-# Termux shows its extra-keys row (ESC/TAB/CTRL/ALT/arrows) by default;
-# most people running a full-screen zsh+LazyVim setup already have
-# their own keyboard-adjacent workflow (or Neovim's own which-key) and
-# don't need it eating vertical space permanently. Only writes values
-# that are still unset — never overwrites customizations the person
-# already made. termux-reload-settings applies it immediately, same as
-# phase4_extract_and_install_nerdfont's font reload.
+# The extra-keys row (ESC/TAB/CTRL/ALT/arrows) is Termux's only way to
+# type keys an Android soft keyboard simply does not have. This used to
+# write "extra-keys = []", deliberately hiding it to save vertical
+# space — which left people in a zsh+LazyVim environment with no ESC,
+# no CTRL and no arrow keys, reported as "the bottom bar disappeared
+# after installing". A terminal IDE needs those keys far more than it
+# needs the two lines of screen they cost.
+#
+# Now: never hide the row, and never overwrite a row the person already
+# configured. If the key is absent entirely, write a two-row layout
+# covering what this environment actually needs (ESC and CTRL for zsh
+# and Neovim, arrows for both, PGUP/PGDN for scrollback, HOME/END for
+# line editing, and '/' and '-' which are awkward on most soft
+# keyboards). Set TDE_TERMUX_EXTRA_KEYS to override the default layout.
+_TDE_DEFAULT_EXTRA_KEYS="[['ESC','/','-','HOME','UP','END','PGUP'],['TAB','CTRL','ALT','LEFT','DOWN','RIGHT','PGDN']]"
+TDE_TERMUX_EXTRA_KEYS="${TDE_TERMUX_EXTRA_KEYS:-$_TDE_DEFAULT_EXTRA_KEYS}"
+
 phase3_configure_termux_ui() {
   local props="$HOME/.termux/termux.properties"
   mkdir -p "$HOME/.termux"
   touch "$props"
-  grep -q "^extra-keys" "$props" 2>/dev/null || echo "extra-keys = []" >> "$props"
-  grep -q "^use-black-ui" "$props" 2>/dev/null || echo "use-black-ui = true" >> "$props"
-  command -v termux-reload-settings >/dev/null 2>&1 && termux-reload-settings
+
+  if grep -q "^[[:space:]]*extra-keys" "$props" 2>/dev/null; then
+    # Someone (Termux's own default file, or the person) already has a
+    # row configured. Leave it exactly as it is — but if a previous
+    # version of this installer is the one that emptied it, say so
+    # instead of silently leaving them without an ESC key.
+    if grep -qE "^[[:space:]]*extra-keys[[:space:]]*=[[:space:]]*\[\][[:space:]]*$" "$props" 2>/dev/null; then
+      log_warn "Your Termux extra-keys row is set to [] (empty) in $props — an earlier version of this installer did that. Delete that line and run 'archreapply' to get the ESC/CTRL/arrow row back."
+    else
+      log_info "Keeping your existing Termux extra-keys row untouched"
+    fi
+  else
+    log_info "Setting a default Termux extra-keys row (ESC/CTRL/arrows — override with TDE_TERMUX_EXTRA_KEYS)"
+    echo "extra-keys = $TDE_TERMUX_EXTRA_KEYS" >> "$props"
+  fi
+
+  # Opt-in (TDE_TERMUX_BLACK_UI=1): this is a pure appearance preference
+  # and writing it unasked overrode what people had chosen in Termux's
+  # own style settings.
+  if [ "${TDE_TERMUX_BLACK_UI:-0}" = "1" ] && ! grep -q "^[[:space:]]*use-black-ui" "$props" 2>/dev/null; then
+    echo "use-black-ui = true" >> "$props"
+  fi
+
+  # '|| true': as the last statement of the function its exit status
+  # becomes the function's, and under the project-wide `set -e` + ERR
+  # trap a missing termux-reload-settings (any non-Termux environment,
+  # a stripped install) aborted the entire installer here. Reloading is
+  # a convenience — the settings file is already written either way.
+  if command -v termux-reload-settings >/dev/null 2>&1; then
+    termux-reload-settings || log_warn "termux-reload-settings failed — your termux.properties is written, it applies on the next Termux restart"
+  else
+    log_info "termux-reload-settings not available — termux.properties written, it applies on the next Termux restart"
+  fi
+  return 0
 }
 
 # chsh needs the FULL path in Termux ("chsh -s zsh" fails with "not an
@@ -108,16 +149,48 @@ if [ -f "$TDE_LAUNCHER_CONFIG" ] && [ -z "\${PROOT_ACTIVE:-}" ] && [ -z "\${TDE_
   # missing user), there's no Termux shell left to fall back into — the
   # session just ends. Recover with a fresh Termux session and
   # TDE_SKIP_LAUNCHER=1, or use a second session and 'archkill'.
-  # Quick, cheap smoke test before committing to exec: if the container
-  # or the user account is broken, this fails fast into a normal Termux
-  # prompt with a clear next step, instead of exec-ing into a login that
-  # errors out and leaves nothing behind (see the trade-off note above).
-  if proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" -- true 2>/dev/null; then
+  # Smoke test before committing to exec: if the container or the user
+  # account is broken, this fails fast into a normal Termux prompt with
+  # a clear next step, instead of exec-ing into a login that errors out
+  # and leaves nothing behind (see the trade-off note above).
+  #
+  # '-- true' alone was too weak: it succeeds on a container whose user
+  # has no home directory or whose login shell is missing or not zsh,
+  # which are exactly the states that produce a broken-looking session
+  # after the exec. It also had no timeout, so a container wedged under
+  # memory pressure would hang every new Termux session indefinitely.
+  # Now it verifies the three things the session actually depends on —
+  # home exists, login shell is /usr/bin/zsh, zsh is executable — under
+  # a hard timeout (timeout(1) ships with Termux's coreutils; if it is
+  # somehow missing the check still runs, just untimed).
+  if command -v timeout >/dev/null 2>&1; then
+    _tde_smoke() { timeout "\${TDE_LAUNCHER_SMOKE_TIMEOUT:-25}" "\$@"; }
+  else
+    _tde_smoke() { "\$@"; }
+  fi
+  # Every \$ here is escaped so the heredoc writing this file emits them
+  # literally: they must be expanded by the shell INSIDE the container
+  # at login time, not by the Termux-side shell that wrote the snippet.
+  # Without the escapes this baked Termux's own \$HOME and login shell
+  # into the test, which then compared Termux's bash against
+  # /usr/bin/zsh and refused to ever enter Arch.
+  _tde_smoke_cmd='test -d "\$HOME" && test -x /usr/bin/zsh && [ "\$(getent passwd "\$(id -un)" | cut -d: -f7)" = /usr/bin/zsh ]'
+  if _tde_smoke proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" -- sh -c "\$_tde_smoke_cmd" 2>/dev/null; then
+    unset -f _tde_smoke
     exec proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
   else
-    echo "termux-dev-env: could not log into '\$ARCH_DISTRO_ALIAS' as '\$ARCH_USERNAME' — staying in Termux."
-    echo "Try: archdiag   (or TDE_SKIP_LAUNCHER=1 zsh to always land here)"
+    _tde_rc=\$?
+    unset -f _tde_smoke
+    echo "termux-dev-env: could not start a usable Arch session as '\$ARCH_USERNAME' in '\$ARCH_DISTRO_ALIAS' — staying in Termux."
+    if [ "\$_tde_rc" = "124" ]; then
+      echo "(the container did not respond within \${TDE_LAUNCHER_SMOKE_TIMEOUT:-25}s — it may be under memory pressure; try 'archkill' then open a new session)"
+    else
+      echo "(checked: home directory exists, /usr/bin/zsh is executable, login shell is /usr/bin/zsh)"
+    fi
+    echo "Try: archdiag   |   archhealth   |   TDE_SKIP_LAUNCHER=1 zsh   to always land in Termux"
+    unset _tde_rc
   fi
+  unset _tde_smoke_cmd
 fi
 EOF
 )"
@@ -146,7 +219,7 @@ phase3_setup_launcher_run() {
   log_info "=== Phase 3, step 3: launcher setup ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would install zsh+oh-my-zsh+agnoster+autosuggestions in Termux, set extra-keys=[] and black UI, set it as default shell, write launcher config, append idempotent snippet to .bashrc and .zshrc, install archkill to \$PREFIX/bin"
+    log_info "[dry-run] would install zsh+oh-my-zsh+agnoster+autosuggestions in Termux, add a default extra-keys row only if none is configured (never overwriting yours, never emptying it), set zsh as default shell, write launcher config, append idempotent snippet to .bashrc and .zshrc, install archkill to \$PREFIX/bin"
     return 0
   fi
 
@@ -172,5 +245,5 @@ phase3_launcher_ok() {
     [ -x "$PREFIX/bin/archkill" ] && \
     [ -d "$HOME/.oh-my-zsh" ] && \
     grep -q 'ZSH_THEME="agnoster"' "$TDE_ZSHRC" 2>/dev/null && \
-    grep -q "^extra-keys" "$HOME/.termux/termux.properties" 2>/dev/null
+    [ -f "$HOME/.termux/termux.properties" ]
 }

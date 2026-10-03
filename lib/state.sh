@@ -10,7 +10,18 @@ TDE_STATE_FILE="${TDE_STATE_FILE:-$HOME/.config/termux-dev-env/state.env}"
 
 state_init() { kv_init "$TDE_STATE_FILE"; }
 state_get()  { kv_get "$TDE_STATE_FILE" "$1"; }
-state_del()  { kv_del "$TDE_STATE_FILE" "$1"; }
+state_has()  { kv_has "$TDE_STATE_FILE" "$1"; }
+
+# Guarded for --dry-run for the same reason state_set is: a dry run must
+# not mutate real state. Without this, a preview run could clear flags
+# (e.g. PHASE5_WARNINGS) that a later real run depends on.
+state_del() {
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] state_del $1 (skipped, not persisted)"
+    return 0
+  fi
+  kv_del "$TDE_STATE_FILE" "$1"
+}
 
 # Removes every key starting with "<prefix>_" — used by --reinstall to
 # force a specific phase (and its granular sub-flags) to redo. Anchored

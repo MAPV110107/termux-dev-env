@@ -158,12 +158,26 @@ phase4_ensure_ohmyzsh_sourced() {
 # fail ("character not in range") even with a Nerd Font installed and
 # the theme set correctly; it is a locale problem, not a font problem.
 # Idempotent: locale-gen and the file writes are safe to repeat.
+# locale-gen exits 0 even when it generated nothing usable, so the
+# result is verified against `locale -a` instead of the command's exit
+# status. A missing UTF-8 locale is what makes fastfetch and the
+# agnoster prompt render boxes and "character not in range" even with a
+# perfectly good Nerd Font installed — worth naming explicitly, because
+# it sends people hunting a font problem that is really a locale one.
 phase4_configure_locale() {
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
     grep -q "^en_US.UTF-8 UTF-8" /etc/locale.gen 2>/dev/null || echo "en_US.UTF-8 UTF-8" >> /etc/locale.gen
     locale-gen
-    printf "LANG=en_US.UTF-8\nLC_ALL=en_US.UTF-8\n" > /etc/locale.conf
-  ' || log_warn "Could not generate the en_US.UTF-8 locale — fastfetch/agnoster glyphs may render incorrectly"
+    printf "LANG=en_US.UTF-8\\nLC_ALL=en_US.UTF-8\\n" > /etc/locale.conf
+  ' || log_warn "locale-gen reported a failure — verifying the result anyway"
+
+  if proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'locale -a 2>/dev/null | tr "[:upper:]" "[:lower:]" | tr -d "-" | grep -q "^en_us.utf8$"'; then
+    log_info "Locale en_US.UTF-8 generated and available"
+    return 0
+  fi
+
+  log_warn "en_US.UTF-8 is NOT available inside the container after locale-gen — fastfetch and the agnoster prompt will show broken glyphs even with the Nerd Font installed. This is a locale problem, not a font problem. Fix: proot-distro login $TDE_DISTRO_NAME -- sh -c 'echo en_US.UTF-8 UTF-8 >> /etc/locale.gen && locale-gen'"
+  return 0
 }
 
 phase4_set_default_shell() {
@@ -192,6 +206,12 @@ alias vi=nvim
 alias vim=nvim
 alias ll="ls -lah --color=auto"
 if [[ -o interactive ]] && [ -t 0 ] && command -v fastfetch >/dev/null 2>&1; then
+  # Clear first: without this the banner prints underneath whatever was
+  # already on screen (the installer log, the previous Termux session),
+  # which looks like a glitch rather than a login screen. printf "\\033c"
+  # is a full terminal reset — closer to how a fresh session starts than
+  # clear, which only scrolls the old content out of view.
+  printf "\\033c"
   fastfetch
 fi'
 

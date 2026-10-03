@@ -97,13 +97,17 @@ assert_pass "nerdfont_ok rejects a tiny/truncated font file, not just its existe
 "
 # Telecom is opt-in (TDE_WITH_TELECOM=1) — core.sh must not even source
 # telecom.sh, let alone run it, without that flag.
-assert_pass "core.sh never calls phase4_telecom_run unless TDE_WITH_TELECOM is checked first" bash -c "
+# The gate moved from a bare "[ TDE_WITH_TELECOM = 1 ]" in core.sh to
+# phase4_telecom_wanted (components/telecom.sh), which also honours a
+# recorded answer and can ask interactively — but it must still be the
+# thing standing between core.sh and phase4_telecom_run.
+assert_pass "core.sh never calls phase4_telecom_run unless phase4_telecom_wanted gated it" bash -c "
   grep -n 'phase4_telecom_run' '$SCRIPT_DIR/core.sh' | while read -r line; do
     n=\"\${line%%:*}\"
-    sed -n \"\$((n-8)),\${n}p\" '$SCRIPT_DIR/core.sh' | grep -q 'TDE_WITH_TELECOM' || exit 1
+    sed -n \"\$((n-8)),\${n}p\" '$SCRIPT_DIR/core.sh' | grep -qE 'phase4_telecom_wanted|TDE_WITH_TELECOM' || exit 1
   done
 "
-assert_pass "self_heal does not retry telecom unless TDE_WITH_TELECOM=1" bash -c "
+assert_pass "self_heal does not retry telecom unless it was selected" bash -c "
   source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
   source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
   TDE_DISTRO_NAME=archarm

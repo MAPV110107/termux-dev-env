@@ -31,11 +31,19 @@ phase5_cleanup() {
   # actually succeeded, wiped out the exact directory this project's own
   # TROUBLESHOOTING.md tells people to retry from after a failed paru
   # install — leaving nothing left to retry.
+  # Gated on paru actually RUNNING (`paru --version`), not merely being
+  # on PATH: the known failure here is paru-bin installing fine and then
+  # dying on a libalpm version mismatch, which `command -v` happily
+  # reports as present. Deleting the build directories in that state
+  # removes exactly what TROUBLESHOOTING.md (and `archparu`) tell people
+  # to retry from.
   local username
   username="$(state_get ARCH_USERNAME)"
   if [ -n "$username" ] && \
-     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v paru >/dev/null 2>&1; then
-    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin 2>/dev/null
-    log_info "Cleaned up: paru build directory inside container"
+     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru --version >/dev/null 2>&1; then
+    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- rm -rf /tmp/paru-bin /tmp/paru 2>/dev/null
+    log_info "Cleaned up: paru build directories inside container"
+  elif [ -n "$username" ]; then
+    log_warn "Kept (paru does not run — preserved so 'archparu' can retry from them): /tmp/paru-bin, /tmp/paru"
   fi
 }

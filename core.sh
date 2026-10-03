@@ -74,7 +74,31 @@ if [ -n "$TDE_REINSTALL_PHASE" ]; then
   esac
 fi
 
-log_info "termux-dev-env v$(cat "$TDE_ROOT/VERSION" 2>/dev/null || echo "unknown") starting"
+TDE_VERSION="$(cat "$TDE_ROOT/VERSION" 2>/dev/null || echo "unknown")"
+export TDE_VERSION
+log_info "termux-dev-env v${TDE_VERSION} starting"
+
+# Config migration: when the installed version differs from the one that
+# last ran, the generated snippets (launcher block in .bashrc/.zshrc,
+# the container-side runtime block, the maintenance commands) may have
+# changed shape, but their phases are already marked done and would be
+# skipped — leaving an upgraded checkout driving last version's config.
+# Every one of those steps is idempotent, so the fix is simply to let
+# them run again. State that cannot be regenerated (ARCH_USERNAME, the
+# rootfs and user flags) is deliberately left untouched.
+_tde_migrate_config() {
+  local previous
+  previous="$(state_get INSTALLED_VERSION)"
+  [ "$previous" = "$TDE_VERSION" ] && return 0
+  if [ -n "$previous" ]; then
+    log_info "Version changed ($previous -> $TDE_VERSION) — re-applying generated config (launcher snippet, shell blocks, maintenance commands)"
+    state_del PHASE3_LAUNCHER_SETUP
+    state_del PHASE4_SHELL
+    state_del PHASE6_DONE
+  fi
+  state_set INSTALLED_VERSION "$TDE_VERSION"
+}
+_tde_migrate_config
 [ "$TDE_DRY_RUN" = "1" ] && log_info "dry-run mode: no changes will be made"
 
 if [ "$(state_get PHASE1_DONE)" != "1" ]; then
@@ -179,18 +203,16 @@ fi
 # elsewhere in the ecosystem. Opting in explicitly also means a plain
 # first-time install has one less thing that can go wrong (see
 # phase5_rns_ok's own PATH caveat) before reaching LazyVim.
-if [ "${TDE_WITH_TELECOM:-0}" = "1" ]; then
+# shellcheck source=components/telecom.sh
+source "$SCRIPT_DIR/components/telecom.sh"
+if phase4_telecom_wanted; then
   if [ "$(state_get PHASE4_TELECOM)" != "1" ]; then
-    # shellcheck source=components/telecom.sh
-    source "$SCRIPT_DIR/components/telecom.sh"
     if phase4_telecom_run; then
       state_set PHASE4_TELECOM 1
     else
       log_warn "Telecom step incomplete — will retry on the next run"
     fi
   fi
-else
-  log_info "Skipping telecom (Reticulum/Nomad/aria2) — set TDE_WITH_TELECOM=1 before running ./core.sh to include it"
 fi
 if [ "$(state_get PHASE4_FSUTILS)" != "1" ]; then
   # shellcheck source=components/fs_utils.sh
@@ -202,7 +224,14 @@ state_set PHASE4_DONE 1
 
 log_info "Phase 4 complete."
 
-if [ "$(state_get PHASE5_DONE)" != "1" ]; then
+# Phase 5 runs again whenever the last audit left a recoverable warning
+# (PHASE5_WARNINGS), not only when it has never completed. Self-heal —
+# the thing that retries a failed Nerd Font or telecom install — lives
+# inside phase 5, so marking the phase permanently done on a run that
+# ended with warnings meant those components were never retried again
+# without an explicit --reinstall=5. Set TDE_NO_SELF_HEAL=1 to opt out.
+if [ "$(state_get PHASE5_DONE)" != "1" ] || \
+   { [ "$(state_get PHASE5_WARNINGS)" = "1" ] && [ -z "${TDE_NO_SELF_HEAL:-}" ]; }; then
   # shellcheck source=components/install_rootfs.sh
   source "$SCRIPT_DIR/components/install_rootfs.sh"
   # shellcheck source=components/create_user.sh
@@ -228,8 +257,16 @@ if [ "$(state_get PHASE5_DONE)" != "1" ]; then
 
   phase5_run
   state_set PHASE5_DONE 1
+  # Recorded so the next run knows whether to self-heal again (see the
+  # condition above). phase5_run exports this via _audit_check.
+  if [ "${TDE_AUDIT_HAD_WARNING:-0}" = "1" ]; then
+    state_set PHASE5_WARNINGS 1
+    log_info "Phase 5 finished with recoverable warnings — the next ./core.sh run will try to self-heal them again (TDE_NO_SELF_HEAL=1 to stop retrying)"
+  else
+    state_del PHASE5_WARNINGS
+  fi
 else
-  log_info "Phase 5 already completed, skipping"
+  log_info "Phase 5 already completed with no recoverable warnings, skipping"
 fi
 
 log_info "Phase 5 complete."
@@ -247,7 +284,7 @@ else
   log_info "Phase 6 already completed, skipping"
 fi
 
-log_info "termux-dev-env: installation complete. Maintenance commands available: archhealth, archdiag, archupdate, archreset, archreapply, archbridge."
+log_info "termux-dev-env: installation complete. Maintenance commands: archhealth, archdiag, archselfheal, archupdate, archreset, archreapply, archfont, archparu, archbridge."
 
 # Drops straight into Arch instead of leaving the person in the same
 # Termux shell the installer ran in — that shell started before the

@@ -9,8 +9,12 @@ echo "=== cleanup.sh (regression: informe 2026-09-25, paru-bin deleted before it
 # phase4_toolchain_ok passed — which only requires gcc+git since paru
 # became non-blocking, so it deleted the build directory even when
 # paru's OWN build/install had failed, wiping out exactly what
-# TROUBLESHOOTING.md tells people to retry from.
-assert_pass "cleanup does NOT delete /tmp/paru-bin when paru itself isn't actually installed" bash -c "
+# TROUBLESHOOTING.md tells people to retry from. Tightened after the
+# 2026-10-03 report: the gate is now `paru --version` (does it RUN?)
+# rather than `command -v paru` (is it on PATH?), because the real
+# failure mode is paru-bin installing cleanly and then dying on a
+# libalpm mismatch — present on PATH, completely unusable.
+assert_pass "cleanup does NOT delete the paru build dirs when paru does not actually run" bash -c "
   source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
   source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
   TDE_DISTRO_NAME=archarm
@@ -23,14 +27,15 @@ assert_pass "cleanup does NOT delete /tmp/paru-bin when paru itself isn't actual
   phase3_rootfs_ok() { return 0; }
   proot-distro() {
     case \"\$*\" in
-      *'command -v paru'*) return 1 ;;   # paru itself never actually got installed
-      *'rm -rf /tmp/paru-bin'*) echo 'SHOULD NOT DELETE /tmp/paru-bin' >&2; return 1 ;;
+      *'paru --version'*) return 1 ;;    # installed or not, paru does not RUN
+      *'command -v paru'*) return 0 ;;    # on PATH, which is exactly the trap: it still doesn't work
+      *'rm -rf /tmp/paru'*) echo 'SHOULD NOT DELETE the paru build dirs' >&2; return 1 ;;
       *) return 0 ;;
     esac
   }
   phase5_cleanup
 "
-assert_pass "cleanup DOES delete /tmp/paru-bin once paru is actually present" bash -c "
+assert_pass "cleanup DOES delete the paru build dirs once paru actually runs" bash -c "
   source '$SCRIPT_DIR/lib/error_handling.sh'; source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
   source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
   TDE_DISTRO_NAME=archarm
@@ -44,8 +49,8 @@ assert_pass "cleanup DOES delete /tmp/paru-bin once paru is actually present" ba
   DELETED=0
   proot-distro() {
     case \"\$*\" in
-      *'command -v paru'*) return 0 ;;
-      *'rm -rf /tmp/paru-bin'*) DELETED=1; return 0 ;;
+      *'paru --version'*) return 0 ;;
+      *'rm -rf /tmp/paru'*) DELETED=1; return 0 ;;
       *) return 0 ;;
     esac
   }

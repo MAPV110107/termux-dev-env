@@ -50,10 +50,20 @@ idempotent_append() {
 # (e.g. ".config/nvim/lua/config/options.lua", no leading ~/ or /).
 idempotent_append_container() {
   local distro="$1" username="$2" container_path="$3" marker_name="$4" content="$5" comment="${6:-#}"
-  proot-distro login "$distro" --user "$username" \
+  # The block CONTENT is piped in on stdin, never passed as an
+  # environment variable. The short metadata (path, marker, comment)
+  # still goes through --env because it is a handful of bytes, but the
+  # content itself can be a multi-kilobyte LazyVim Lua spec or shell
+  # snippet, and the whole environment has to survive execve() into
+  # proot and then into the container. Linux caps one env var at
+  # MAX_ARG_STRLEN (128 KB) and the total argv+envp at ARG_MAX, with
+  # Android/proot layering their own limits underneath — a block that
+  # outgrows any of those does not fail cleanly, it gets silently
+  # truncated, and a truncated Lua config is a broken editor with no
+  # message explaining why. stdin has no such limit.
+  printf '%s\n' "$content" | proot-distro login "$distro" --user "$username" \
     --env TDE_IA_PATH="$container_path" \
     --env TDE_IA_MARKER="$marker_name" \
-    --env TDE_IA_CONTENT="$content" \
     --env TDE_IA_COMMENT="$comment" \
     --env TDE_IA_AWK="$_TDE_IA_AWK" -- sh -c '
     f="$HOME/$TDE_IA_PATH"
@@ -61,9 +71,14 @@ idempotent_append_container() {
     touch "$f"
     start="$TDE_IA_COMMENT >>> termux-dev-env: $TDE_IA_MARKER >>>"
     end="$TDE_IA_COMMENT <<< termux-dev-env: $TDE_IA_MARKER <<<"
+    # Read stdin BEFORE touching the file: if the pipe broke or the
+    # caller passed nothing, bail out rather than replacing a good
+    # block with an empty one.
+    ia_content="$(cat)"
+    [ -n "$ia_content" ] || { echo "idempotent_append_container: no content on stdin for $TDE_IA_MARKER" >&2; exit 1; }
     if grep -qF -- "$start" "$f"; then
       awk -v s="$start" -v e="$end" "$TDE_IA_AWK" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
     fi
-    { echo ""; echo "$start"; printf "%s\n" "$TDE_IA_CONTENT"; echo "$end"; } >> "$f"
+    { echo ""; echo "$start"; printf "%s\\n" "$ia_content"; echo "$end"; } >> "$f"
   '
 }

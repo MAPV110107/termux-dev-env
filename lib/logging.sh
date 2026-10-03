@@ -8,11 +8,39 @@ TDE_LOGGING_LOADED=1
 TDE_CONFIG_DIR="${TDE_CONFIG_DIR:-$HOME/.config/termux-dev-env}"
 TDE_LOG_DIR="$TDE_CONFIG_DIR/logs"
 
+# Every run (the installer, archhealth, archdiag, archupdate) creates a
+# new timestamped log and nothing ever removed the old ones — on a phone
+# that is a slowly growing pile under $HOME/.config. Keep the newest
+# TDE_LOG_KEEP of each kind and drop the rest.
+TDE_LOG_KEEP="${TDE_LOG_KEEP:-20}"
+
+log_rotate() {
+  local pattern="$1" keep="${2:-$TDE_LOG_KEEP}" listing count
+  # Every step is failure-tolerant on purpose: this runs under the
+  # project-wide `set -euo pipefail` plus the ERR trap, where a glob
+  # that matches nothing makes `ls` exit non-zero and would abort the
+  # whole installer over log housekeeping. ls -t rather than
+  # `find -printf` because Android's find is toybox's and has no
+  # -printf; the filenames are timestamped and space-free by
+  # construction, so word splitting on the glob is safe here.
+  # shellcheck disable=SC2086
+  listing="$(ls -1t $TDE_LOG_DIR/$pattern 2>/dev/null || true)"
+  [ -n "$listing" ] || return 0
+  count="$(printf '%s\n' "$listing" | wc -l)"
+  [ "${count:-0}" -gt "$keep" ] || return 0
+  printf '%s\n' "$listing" | tail -n +"$((keep + 1))" | while IFS= read -r old; do
+    [ -n "$old" ] && rm -f "$old"
+  done
+  return 0
+}
+
 log_init() {
   mkdir -p "$TDE_LOG_DIR"
   TDE_LOG_FILE="$TDE_LOG_DIR/install_$(date +%Y%m%d_%H%M%S).log"
   export TDE_LOG_FILE
   : > "$TDE_LOG_FILE"
+  log_rotate "install_*.log"
+  log_rotate "install_report_*.log"
 }
 
 _log() {

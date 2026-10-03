@@ -249,11 +249,18 @@ log_init
 source lib/kv.sh
 source lib/state.sh
 source lib/idempotent_append.sh
+source lib/network.sh
+source lib/container_paths.sh
 source components/setup_launcher.sh
 
 phase3_install_zshrc_snippet
 phase3_install_archkill
-echo "Launcher snippet and archkill reinstalled/verified."
+# Also re-applies termux.properties, because that is what the warning
+# about an emptied extra-keys row tells people to run. It never
+# overwrites a row that is actually configured — see
+# phase3_configure_termux_ui.
+phase3_configure_termux_ui
+echo "Launcher snippet, archkill and Termux UI settings reinstalled/verified."
 EOF
   chmod +x "$target"
 }
@@ -284,9 +291,148 @@ EOF
   chmod +x "$target"
 }
 
+# Retries just the Nerd Font, without re-running an entire phase. The
+# font is the component most likely to be missing on a finished install
+# (a flaky mobile download, a truncated write) and the one people most
+# want a one-liner for — it is referenced by name in nerdfonts.sh's own
+# failure message.
+phase6_write_archfont() {
+  local target="$PREFIX/bin/archfont"
+  _write_shebang "$target"
+  cat >> "$target" << 'EOF'
+set -euo pipefail
+CONF="$HOME/.config/termux-dev-env/config.env"
+[ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
+. "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
+
+source lib/error_handling.sh
+source lib/logging.sh
+log_init
+source lib/network.sh
+source lib/kv.sh
+source lib/state.sh
+source lib/container_paths.sh
+source components/nerdfonts.sh
+
+if [ "${1:-}" = "--force" ]; then
+  rm -f "$HOME/.termux/font.ttf"
+fi
+
+if nerdfont_file_ok; then
+  echo "A valid Nerd Font is already installed (~/.termux/font.ttf). Use 'archfont --force' to reinstall it."
+  echo "If icons still show as boxes, force-stop Termux (Android Settings > Apps > Termux > Force stop) and reopen it."
+  exit 0
+fi
+
+phase4_nerdfonts_run
+EOF
+  chmod +x "$target"
+}
+
+# Re-runs phase 5's self-heal + audit on demand, without the installer
+# and without --reinstall=5. Self-heal used to be reachable only from
+# inside a phase-5 run, so a component that failed after the install was
+# finished had no supported way back.
+phase6_write_archselfheal() {
+  local target="$PREFIX/bin/archselfheal"
+  _write_shebang "$target"
+  cat >> "$target" << 'EOF'
+set -euo pipefail
+CONF="$HOME/.config/termux-dev-env/config.env"
+[ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
+. "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
+
+source lib/error_handling.sh
+source lib/logging.sh
+log_init
+source lib/network.sh
+source lib/kv.sh
+source lib/state.sh
+source lib/container_paths.sh
+source lib/idempotent_append.sh
+source components/install_rootfs.sh
+source components/create_user.sh
+source components/setup_launcher.sh
+source components/dev_toolchain.sh
+source components/shell_setup.sh
+source components/lazyvim.sh
+source components/telecom.sh
+source components/nerdfonts.sh
+source lib/generate_report.sh
+source lib/verify_functional.sh
+
+echo "Re-running self-heal for recoverable components (Nerd Font, telecom if selected)..."
+phase5_self_heal
+echo ""
+phase5_run_audit
+echo ""
+if [ "$TDE_AUDIT_HAD_CRITICAL_FAILURE" = "1" ]; then
+  echo "STATUS: something critical is still broken — see $TDE_REPORT_FILE"
+  exit 1
+fi
+if [ "${TDE_AUDIT_HAD_WARNING:-0}" = "1" ]; then
+  echo "STATUS: usable, but optional components are still missing (see above)"
+  exit 0
+fi
+# Nothing left to heal — let the installer stop re-running phase 5.
+state_del PHASE5_WARNINGS
+echo "STATUS: healthy"
+EOF
+  chmod +x "$target"
+}
+
+# paru is optional and non-blocking during the install, so a failed AUR
+# helper leaves the environment working but without AUR access. This is
+# the documented retry path (TROUBLESHOOTING.md pointed at a manual
+# makepkg invocation that lib/cleanup.sh could previously delete).
+phase6_write_archparu() {
+  local target="$PREFIX/bin/archparu"
+  _write_shebang "$target"
+  cat >> "$target" << 'EOF'
+set -euo pipefail
+CONF="$HOME/.config/termux-dev-env/config.env"
+[ -f "$CONF" ] || { echo "termux-dev-env config not found — is it installed?"; exit 1; }
+. "$CONF"
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-${ARCH_DISTRO_ALIAS:-archarm}}"
+cd "$PREFIX/share/termux-dev-env" || { echo "termux-dev-env shared files not found — re-run phase 6 (./core.sh --reinstall=6)"; exit 1; }
+
+source lib/error_handling.sh
+source lib/logging.sh
+log_init
+source lib/network.sh
+source lib/kv.sh
+source lib/state.sh
+source lib/container_paths.sh
+source components/dev_toolchain.sh
+
+USERNAME="$(state_get ARCH_USERNAME)"
+[ -n "$USERNAME" ] || { echo "No ARCH_USERNAME recorded — run the installer first."; exit 1; }
+
+if proot-distro login "$TDE_DISTRO_NAME" --user "$USERNAME" -- paru --version >/dev/null 2>&1; then
+  echo "paru already works:"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$USERNAME" -- paru --version
+  exit 0
+fi
+
+echo "paru is missing or not runnable — reinstalling (this may compile Rust and take a while)..."
+phase4_install_paru
+if proot-distro login "$TDE_DISTRO_NAME" --user "$USERNAME" -- paru --version >/dev/null 2>&1; then
+  echo "paru is working now."
+else
+  echo "paru still does not run — see the log above and $TDE_LOG_FILE."
+  exit 1
+fi
+EOF
+  chmod +x "$target"
+}
+
 phase6_maintenance_ok() {
   local cmd
-  for cmd in archhealth archdiag archupdate archreset archreapply archbridge; do
+  for cmd in archhealth archdiag archupdate archreset archreapply archbridge archfont archselfheal archparu; do
     [ -x "$PREFIX/bin/$cmd" ] || return 1
   done
   [ -d "$TDE_SHARE_DIR/lib" ] && [ -d "$TDE_SHARE_DIR/components" ]
@@ -296,7 +442,7 @@ phase6_install_maintenance_run() {
   log_info "=== Phase 6: maintenance commands ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would copy lib/+components/ to \$PREFIX/share/termux-dev-env, install archhealth, archdiag, archupdate, archreset, archreapply, archbridge to \$PREFIX/bin, install openssh in Termux"
+    log_info "[dry-run] would copy lib/+components/ to \$PREFIX/share/termux-dev-env, install archhealth, archdiag, archupdate, archreset, archreapply, archbridge, archfont, archselfheal, archparu to \$PREFIX/bin, install openssh in Termux, re-assert the launcher snippet"
     return 0
   fi
 
@@ -306,7 +452,23 @@ phase6_install_maintenance_run() {
   phase6_write_archupdate
   phase6_write_archreset
   phase6_write_archreapply
+  phase6_write_archfont
+  phase6_write_archselfheal
+  phase6_write_archparu
   phase6_install_bridge_deps
   phase6_write_archbridge
-  log_info "Maintenance commands installed: archhealth, archdiag, archupdate, archreset, archreapply, archbridge"
+
+  # Re-assert the launcher block here, at the end of every install: it
+  # is what makes a new Termux session enter Arch, and a person whose
+  # .bashrc/.zshrc got edited (or whose phase 3 ran before a config
+  # change) would otherwise have no way back short of --reinstall=3.
+  # idempotent_append makes this a no-op when the block is already
+  # correct. Guarded because phase 6 can run without phase 3's file
+  # being sourced in this shell.
+  if command -v phase3_install_zshrc_snippet >/dev/null 2>&1; then
+    phase3_install_zshrc_snippet
+    log_info "Launcher snippet re-asserted in .bashrc/.zshrc"
+  fi
+
+  log_info "Maintenance commands installed: archhealth, archdiag, archupdate, archreset, archreapply, archbridge, archfont, archselfheal, archparu"
 }

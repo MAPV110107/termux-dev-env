@@ -172,7 +172,14 @@ phase3_disable_pacman_sandbox() {
     proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
       grep -q "^DisableSandbox" /etc/pacman.conf || \
       sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
-      sed -i "s/^#ParallelDownloads = .*/ParallelDownloads = 5/" /etc/pacman.conf
+      # 10, not 5: these are many small package files over a mobile
+      # link where per-request latency dominates throughput, and pacman
+      # caps concurrency per-server anyway. Also rewrites an existing
+      # uncommented value, so re-running actually applies the new
+      # setting instead of silently matching nothing.
+      sed -i "s/^#\?ParallelDownloads = .*/ParallelDownloads = 10/" /etc/pacman.conf
+      grep -q "^ParallelDownloads" /etc/pacman.conf || \
+        sed -i "/^\[options\]/a ParallelDownloads = 10" /etc/pacman.conf
     ' >>"$TDE_LOG_FILE" 2>&1
 
     if proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null; then

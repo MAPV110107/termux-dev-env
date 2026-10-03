@@ -5,13 +5,28 @@
 [ -n "${TDE_VERIFY_FUNCTIONAL_LOADED:-}" ] && return 0
 TDE_VERIFY_FUNCTIONAL_LOADED=1
 
-# >100KB, not just "exists": a 0-byte or truncated font.ttf (an
-# interrupted copy, a disk-full write) still passes a bare -f check but
-# renders nothing — Termux falls back silently, no error either way.
-# 100KB is well under any real Nerd Font variant (single-digit MB) and
-# well over a truncated/empty file.
+# Delegates to nerdfont_file_ok (components/nerdfonts.sh), which checks
+# size AND TrueType/OpenType magic bytes — a truncated font.ttf passes a
+# bare -f check but renders nothing, and Termux falls back silently with
+# no error either way. The inline fallback keeps this usable if only
+# this file is sourced (nerdfonts.sh is always sourced alongside it by
+# core.sh phase 5, archhealth and archdiag).
 phase5_nerdfont_ok() {
-  [ -f "$HOME/.termux/font.ttf" ] && [ "$(wc -c < "$HOME/.termux/font.ttf")" -gt 102400 ]
+  if command -v nerdfont_file_ok >/dev/null 2>&1; then
+    nerdfont_file_ok "$HOME/.termux/font.ttf"
+  else
+    [ -f "$HOME/.termux/font.ttf" ] && [ "$(wc -c < "$HOME/.termux/font.ttf")" -gt 102400 ]
+  fi
+}
+
+# Was the telecom stack actually asked for? Reads the environment and
+# the recorded answer directly instead of calling phase4_telecom_wanted,
+# which can prompt — the audit and the self-heal must never block on a
+# question, and archhealth/archdiag run non-interactively.
+phase5_telecom_selected() {
+  [ "${TDE_SKIP_TELECOM:-0}" = "1" ] && return 1
+  [ "${TDE_WITH_TELECOM:-0}" = "1" ] && return 0
+  [ "$(state_get TELECOM_WANTED)" = "1" ]
 }
 
 phase5_rns_ok() {
@@ -47,7 +62,7 @@ phase5_self_heal() {
   # it even for someone who never asked for it in the first place, since
   # phase5_rns_ok/phase5_aria2_ok naturally read as "not ok" when it was
   # never installed at all.
-  if [ "${TDE_WITH_TELECOM:-0}" = "1" ] && { ! phase5_rns_ok || ! phase5_aria2_ok; }; then
+  if phase5_telecom_selected && { ! phase5_rns_ok || ! phase5_aria2_ok; }; then
     log_info "Self-heal: retrying telecom install"
     phase4_telecom_run || log_warn "Self-heal did not fully fix telecom"
   fi
@@ -63,17 +78,20 @@ phase5_run_audit() {
   _audit_check "Rootfs (Arch Linux ARM)"      CRITICAL phase3_rootfs_ok
   _audit_check "User account + sudo"          CRITICAL phase3_user_ok
   _audit_check "Launcher"                     CRITICAL phase3_launcher_ok
-  _audit_check "Dev toolchain (gcc/git/paru)" CRITICAL phase4_toolchain_ok
+  # Label matches what phase4_toolchain_ok actually requires: paru is
+  # optional and non-blocking (see components/dev_toolchain.sh), so
+  # naming it here made a passing check look like it had verified paru.
+  _audit_check "Dev toolchain (gcc/git)"      CRITICAL phase4_toolchain_ok
   _audit_check "Shell (zsh default)"          CRITICAL phase4_shell_ok
   _audit_check "LazyVim"                      CRITICAL phase4_lazyvim_ok
 
   echo "Optional components:" | tee -a "$TDE_REPORT_FILE"
   _audit_check "Nerd Font" WARNING phase5_nerdfont_ok
-  if [ "${TDE_WITH_TELECOM:-0}" = "1" ]; then
+  if phase5_telecom_selected; then
     _audit_check "Reticulum/Nomad Network" WARNING phase5_rns_ok
     _audit_check "aria2"                   WARNING phase5_aria2_ok
   else
-    echo "  SKIP    Reticulum/Nomad Network, aria2 (telecom is opt-in — set TDE_WITH_TELECOM=1 to include it)" | tee -a "$TDE_REPORT_FILE"
+    echo "  SKIP    Reticulum/Nomad Network, aria2 (opt-in — TDE_WITH_TELECOM=1 ./core.sh to add it)" | tee -a "$TDE_REPORT_FILE"
   fi
 }
 

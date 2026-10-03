@@ -106,8 +106,9 @@ TMPP="$(mktemp -d)"; export PREFIX="$TMPP/usr" HOME="$TMPP/home"; mkdir -p "$PRE
   source components/install_maintenance.sh
   phase6_write_archhealth; phase6_write_archdiag; phase6_write_archupdate
   phase6_write_archreset; phase6_write_archreapply; phase6_write_archbridge
+  phase6_write_archfont; phase6_write_archselfheal; phase6_write_archparu
 ) >/dev/null 2>&1
-for s in archhealth archdiag archupdate archreset archreapply archbridge; do
+for s in archhealth archdiag archupdate archreset archreapply archbridge archfont archselfheal archparu; do
   [ -f "$PREFIX/bin/$s" ] || { fail "$s not generated"; continue; }
   bash -n "$PREFIX/bin/$s" 2>/dev/null || fail "$s syntax"
 done
