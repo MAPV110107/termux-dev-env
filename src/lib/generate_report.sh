@@ -1,0 +1,32 @@
+# Phase 5 — report file + the generic check-and-record helper the audit
+# uses for every component. One place decides what "critical" means for
+# the exit behavior; the audit itself just labels each check's severity.
+
+[ -n "${TDE_GENERATE_REPORT_LOADED:-}" ] && return 0
+TDE_GENERATE_REPORT_LOADED=1
+
+TDE_REPORT_FILE="$HOME/.config/termux-dev-env/logs/install_report_$(date +%Y%m%d_%H%M%S).log"
+# Exported: read by phase5_print_summary in lib/verify_functional.sh, which
+# is analysed by shellcheck as a separate file and so cannot see the use.
+export TDE_AUDIT_HAD_CRITICAL_FAILURE=0
+# Set when a non-critical (WARNING) check fails. core.sh uses it to leave
+# Phase 5 eligible to run again on the next invocation, so a recoverable
+# component — the Nerd Font is the usual one — keeps getting self-healed
+# instead of being written off because "phase 5 already completed".
+export TDE_AUDIT_HAD_WARNING=0
+
+_audit_check() {
+  local label="$1" severity_on_fail="$2"
+  shift 2
+  if "$@" >/dev/null 2>&1; then
+    echo "  [OK]       $label" | tee -a "$TDE_REPORT_FILE"
+  else
+    echo "  [$severity_on_fail] $label" | tee -a "$TDE_REPORT_FILE"
+    if [ "$severity_on_fail" = "CRITICAL" ]; then
+      export TDE_AUDIT_HAD_CRITICAL_FAILURE=1
+    else
+      export TDE_AUDIT_HAD_WARNING=1
+    fi
+  fi
+  return 0
+}

@@ -1,0 +1,287 @@
+# Phase 3, step 1 — rootfs install. Downloads the official Arch Linux ARM
+# tarball (aarch64-specific — this project targets Android/Termux, which
+# is aarch64) and verifies it with GPG before handing it to proot-distro.
+#
+# NOTE: an earlier version of this file used the OCI image
+# danhunsaker/archlinuxarm via proot-distro's own pull mechanism. That
+# image was verified as ACTIVELY MAINTAINED and proot-distro's own
+# documented example, but never verified for architecture — its tags are
+# linux/amd64 only (QEMU-emulated Arch ARM userland for x86_64 hosts),
+# not usable on an aarch64 Android device at all. Reverted to a source
+# confirmed aarch64-native from the start.
+
+[ -n "${TDE_INSTALL_ROOTFS_LOADED:-}" ] && return 0
+TDE_INSTALL_ROOTFS_LOADED=1
+
+TDE_ARM_MIRRORS=(os.archlinuxarm.org ca.us.mirror.archlinuxarm.org eu.mirror.archlinuxarm.org)
+TDE_ARM_KEYRING_URL="https://raw.githubusercontent.com/archlinuxarm/archlinuxarm-keyring/master/archlinuxarm.gpg"
+TDE_ROOTFS_TMPDIR="$HOME/.cache/termux-dev-env/rootfs"
+TDE_ROOTFS_TARBALL="$TDE_ROOTFS_TMPDIR/ArchLinuxARM-aarch64-latest.tar.gz"
+TDE_ROOTFS_SIG="${TDE_ROOTFS_TARBALL}.sig"
+
+phase3_install_gpg_tool() {
+  command -v gpg >/dev/null 2>&1 && return 0
+  log_info "Installing gnupg (needed to verify the rootfs signature)"
+  retry_with_backoff 3 5 pkg install -y gnupg || \
+    log_fatal_code 310 "Could not install gnupg — cannot verify rootfs integrity"
+}
+
+phase3_import_signing_key() {
+  log_info "Importing Arch Linux ARM signing key"
+  retry_with_backoff 3 5 curl -fsSL "$TDE_ARM_KEYRING_URL" -o "$TDE_ROOTFS_TMPDIR/archlinuxarm.gpg" || \
+    log_fatal_code 311 "Could not download the Arch Linux ARM signing key"
+  gpg --import "$TDE_ROOTFS_TMPDIR/archlinuxarm.gpg" || \
+    log_fatal_code 312 "Could not import the Arch Linux ARM signing key"
+}
+
+# Tries each mirror in order; a corrupted download or a failed signature
+# both discard the file and move to the next mirror rather than aborting
+# on the first one — a single bad mirror should not block the install.
+#
+# Pinning: archlinuxarm.org only serves "latest", it doesn't keep dated
+# historical tarballs the way git keeps commits. To pin to a known-good
+# version, host your OWN verified copy (tarball + matching .sig) anywhere
+# reachable and set TDE_ROOTFS_URL_OVERRIDE to its URL — GPG verification
+# still applies, this only changes where the file comes from (use an
+# https URL there if you host it yourself — the scheme is taken verbatim).
+phase3_download_and_verify() {
+  local mirror tarball_url sig_url
+
+  if [ -n "${TDE_ROOTFS_URL_OVERRIDE:-}" ]; then
+    tarball_url="$TDE_ROOTFS_URL_OVERRIDE"
+    sig_url="${tarball_url}.sig"
+    log_info "Using pinned rootfs override: $tarball_url"
+    if retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url" && \
+       retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url" && \
+       gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then
+      log_info "GPG signature verified for pinned override"
+      return 0
+    fi
+    log_fatal_code 313 "Pinned rootfs override failed to download or verify: $tarball_url"
+  fi
+
+  # https first, http second, per mirror. GPG verification below is what
+  # actually makes the tarball trustworthy (that has always been true and
+  # is unchanged), so http is not a vulnerability here — but https also
+  # stops a transparent proxy or captive portal on a mobile network from
+  # silently handing back an error page or a truncated body, which is a
+  # real and reported failure mode. The http attempt is kept as a
+  # fallback precisely because https can fail for reasons unrelated to
+  # the mirror: a device clock far enough off to invalidate the
+  # certificate, or a Termux install whose ca-certificates package is
+  # stale. Falling back costs one extra curl attempt and never weakens
+  # the signature check.
+  for mirror in "${TDE_ARM_MIRRORS[@]}"; do
+    for scheme in https http; do
+      tarball_url="${scheme}://${mirror}/os/ArchLinuxARM-aarch64-latest.tar.gz"
+      sig_url="${tarball_url}.sig"
+      log_info "Trying mirror: $mirror over $scheme"
+
+      if ! retry_with_backoff 3 5 curl -fL -C - -o "$TDE_ROOTFS_TARBALL" "$tarball_url"; then
+        log_warn "Download failed from $mirror over $scheme"
+        rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+        continue
+      fi
+      if ! retry_with_backoff 2 3 curl -fL -o "$TDE_ROOTFS_SIG" "$sig_url"; then
+        log_warn "Signature download failed from $mirror over $scheme"
+        rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+        continue
+      fi
+      if gpg --verify "$TDE_ROOTFS_SIG" "$TDE_ROOTFS_TARBALL" >>"$TDE_LOG_FILE" 2>&1; then
+        log_info "GPG signature verified against $mirror ($scheme)"
+        return 0
+      fi
+      # A failed signature is NOT retried over the other scheme: the
+      # bytes are wrong, not the transport. Move to the next mirror.
+      log_warn "GPG verification failed for $mirror — discarding, trying next mirror"
+      rm -f "$TDE_ROOTFS_TARBALL" "$TDE_ROOTFS_SIG"
+      break
+    done
+  done
+
+  log_fatal_code 314 "Could not download and verify the Arch Linux ARM rootfs from any mirror"
+}
+
+phase3_container_exists() {
+  # Filesystem check first: this is what proot-distro itself uses to decide
+  # "already installed" (see command_install() upstream — it tests
+  # "${INSTALLED_ROOTFS_DIR}/${distro_name}/etc"), and TDE_ROOTFS_PATH
+  # (lib/container_paths.sh) already points at that exact same directory.
+  # Unlike parsing 'proot-distro list', this can't be thrown off by column
+  # layout changes, a leading install-marker character, or ANSI color
+  # codes across proot-distro versions.
+  if [ -d "$TDE_ROOTFS_PATH/etc" ]; then
+    return 0
+  fi
+  # Fall back to the registry in case the rootfs was relocated or the
+  # directory layout ever changes upstream again. '-q' is proot-distro's
+  # own quiet/script-friendly listing mode: one alias per line, no table
+  # formatting to misparse.
+  if proot-distro list -q 2>/dev/null | grep -qx "$TDE_DISTRO_NAME"; then
+    return 0
+  fi
+  # Last resort: if login actually works, the container functionally
+  # exists regardless of what the filesystem check or list missed.
+  proot-distro login "$TDE_DISTRO_NAME" -- true >/dev/null 2>&1
+}
+
+# Only called by phase3_install_rootfs_run's "container doesn't exist yet"
+# branch — see there for why the existence check lives one level up
+# instead of here (avoids downloading/verifying the tarball just to
+# discard it on an "already exists" error).
+phase3_install_rootfs() {
+  log_info "Installing Arch Linux ARM into proot-distro as '$TDE_DISTRO_NAME'"
+  proot-distro install "$TDE_ROOTFS_TARBALL" --name "$TDE_DISTRO_NAME" --architecture aarch64 || \
+    log_fatal_code 315 "proot-distro install failed"
+}
+
+phase3_smoke_test_rootfs() {
+  proot-distro login "$TDE_DISTRO_NAME" -- true || \
+    log_fatal_code 316 "Rootfs installed but failed to log in — installation is broken"
+}
+
+# Without this, pacman signature checks fail on a freshly installed
+# rootfs — scdaemon in particular can hang pacman-key inside proot since
+# there's no real smartcard device for it to talk to.
+phase3_init_pacman_keyring() {
+  log_info "Initializing pacman keyring (pacman-key --init, --populate archlinuxarm)"
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+    set -e
+    pacman-key --init
+    echo "disable-scdaemon" > /etc/pacman.d/gnupg/gpg-agent.conf
+    pacman-key --populate archlinuxarm
+  ' < /dev/null || log_fatal_code 317 "Could not initialize pacman keyring"
+}
+
+# pacman's sandboxed download/hook execution needs Linux namespaces proot
+# doesn't provide — without this, pacman operations can hang or fail
+# inside the container.
+#
+# IMPORTANT: `sed -i "/pattern/a text" file` exits 0 even when "pattern"
+# never matches anything — it just silently does nothing. That means the
+# old "|| log_warn" here could never actually fire on the one failure
+# mode that matters (the insert silently not happening), regardless of
+# whether it said warn or fatal. So this re-checks the *actual file
+# content* after the edit, not the edit command's exit code, and retries
+# a few times before giving up — covers both a genuinely missing
+# [options] header and transient proot/login flakiness under memory
+# pressure.
+phase3_disable_pacman_sandbox() {
+  local attempt
+  for attempt in 1 2 3; do
+    proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+      grep -q "^DisableSandbox" /etc/pacman.conf || \
+      sed -i "/^\[options\]/a DisableSandbox" /etc/pacman.conf
+      # 10, not 5: these are many small package files over a mobile
+      # link where per-request latency dominates throughput, and pacman
+      # caps concurrency per-server anyway. Also rewrites an existing
+      # uncommented value, so re-running actually applies the new
+      # setting instead of silently matching nothing.
+      sed -i "s/^#\?ParallelDownloads = .*/ParallelDownloads = 10/" /etc/pacman.conf
+      grep -q "^ParallelDownloads" /etc/pacman.conf || \
+        sed -i "/^\[options\]/a ParallelDownloads = 10" /etc/pacman.conf
+    ' >>"$TDE_LOG_FILE" 2>&1
+
+    if proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null; then
+      log_info "DisableSandbox confirmed present in pacman.conf (attempt $attempt/3)"
+      return 0
+    fi
+    log_warn "DisableSandbox still missing after attempt $attempt/3 — retrying"
+    sleep 2
+  done
+  log_fatal_code 318 "Could not get DisableSandbox into pacman.conf inside $TDE_DISTRO_NAME after 3 attempts. Manual fix: proot-distro login $TDE_DISTRO_NAME -- sed -i '/^\[options\]/a DisableSandbox' /etc/pacman.conf — then re-run ./core.sh. See $TDE_LOG_FILE for the raw sed/login output."
+}
+
+# Post-condition, checked by core.sh before marking PHASE3_ROOTFS_INSTALLED —
+# the container is registered, logs in, AND the keyring/sandbox setup this
+# step is responsible for actually landed, not just "install exited zero".
+# Reports which specific sub-check failed instead of a bare pass/fail, so
+# a FATAL here (from core.sh) tells you what to fix without needing to
+# reproduce the three checks by hand.
+phase3_rootfs_ok() {
+  local ok=1
+
+  if ! phase3_container_exists; then
+    log_warn "post-check: container '$TDE_DISTRO_NAME' not listed by 'proot-distro list'"
+    ok=0
+  fi
+  if ! proot-distro login "$TDE_DISTRO_NAME" -- test -d /etc/pacman.d/gnupg 2>/dev/null; then
+    log_warn "post-check: /etc/pacman.d/gnupg missing — pacman keyring was not initialized (phase3_init_pacman_keyring)"
+    ok=0
+  fi
+  if ! proot-distro login "$TDE_DISTRO_NAME" -- grep -q "^DisableSandbox" /etc/pacman.conf 2>/dev/null; then
+    log_warn "post-check: DisableSandbox missing from /etc/pacman.conf (phase3_disable_pacman_sandbox)"
+    ok=0
+  fi
+
+  [ "$ok" = "1" ]
+}
+
+# Best-effort, non-blocking: gives pacman fallback mirrors so one bad
+# mobile-network DNS resolution isn't a hard stop. Reuses TDE_ARM_MIRRORS
+# (the same list already trusted for the tarball download above) instead
+# of introducing new, unverified mirror hostnames — Arch Linux ARM's own
+# tarball ships with a single GeoIP-based mirror
+# (mirror.archlinuxarm.org), which is exactly the single point of
+# failure behind "Resolving timed out" errors on flaky connections.
+phase3_write_pacman_mirrorlist() {
+  local mirror mirrorlist_body
+  mirrorlist_body=""
+  for mirror in "${TDE_ARM_MIRRORS[@]}"; do
+    mirrorlist_body="${mirrorlist_body}Server = http://${mirror}/\$arch/\$repo
+"
+  done
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c "cat > /etc/pacman.d/mirrorlist << 'MIRROREOF'
+${mirrorlist_body}MIRROREOF" >>"$TDE_LOG_FILE" 2>&1 || {
+    log_warn "Could not write a multi-mirror pacman mirrorlist — pacman will fall back to the tarball's default single mirror"
+    return 0
+  }
+  log_info "pacman mirrorlist set to ${#TDE_ARM_MIRRORS[@]} mirrors (${TDE_ARM_MIRRORS[*]})"
+}
+
+# Best-effort, non-blocking: this rootfs never boots its own kernel — it
+# always runs under the host Android kernel via proot — so linux-aarch64
+# is pure wasted bandwidth (a large package, directly adding to timeout
+# exposure) that also triggers mkinitcpio's autodetect hook scanning
+# /sys/devices, which fails under proot (no real device nodes) and
+# produces the "Permission denied" / "missing firmware" log noise users
+# have reported. Ignoring it addresses that at the source instead of
+# just filtering the resulting warnings.
+phase3_ignore_kernel_pkg() {
+  proot-distro login "$TDE_DISTRO_NAME" -- sh -c '
+    grep -q "^IgnorePkg" /etc/pacman.conf || \
+    sed -i "/^\[options\]/a IgnorePkg   = linux-aarch64" /etc/pacman.conf
+  ' >>"$TDE_LOG_FILE" 2>&1 || \
+    log_warn "Could not set IgnorePkg for linux-aarch64 — pacman -Syu may pull the kernel and print mkinitcpio noise (harmless, see TROUBLESHOOTING.md)"
+}
+
+phase3_install_rootfs_run() {
+  log_info "=== Phase 3, step 1: rootfs install ==="
+
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] would install gnupg, download+GPG-verify the aarch64 rootfs (TDE_ROOTFS_URL_OVERRIDE if set, else ${TDE_ARM_MIRRORS[*]}), run 'proot-distro install', smoke test, initialize pacman keyring, disable pacman sandbox, write a multi-mirror pacman mirrorlist, ignore the linux-aarch64 kernel package"
+    return 0
+  fi
+
+  mkdir -p "$TDE_ROOTFS_TMPDIR"
+
+  # A container left behind by an earlier run that failed the post-condition
+  # (see phase3_rootfs_ok) already has a real rootfs on disk — re-downloading
+  # and re-verifying 1.5-2.5GB just to hit "already exists" from
+  # 'proot-distro install' would be pure waste. Repair its config instead.
+  if phase3_container_exists; then
+    log_info "Container '$TDE_DISTRO_NAME' already exists — skipping download/verify, repairing keyring and pacman config"
+  else
+    phase3_install_gpg_tool
+    phase3_import_signing_key
+    phase3_download_and_verify
+    phase3_install_rootfs
+  fi
+
+  phase3_smoke_test_rootfs
+  phase3_init_pacman_keyring
+  phase3_disable_pacman_sandbox
+  phase3_write_pacman_mirrorlist
+  phase3_ignore_kernel_pkg
+  log_info "Rootfs installed and verified"
+}

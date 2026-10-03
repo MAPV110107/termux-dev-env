@@ -247,7 +247,10 @@ Accessible directly from any Termux shell:
 | `archupdate [--with-backup]` | Snapshots package list, runs `pacman -Syu`, optionally backs up full container, and re-audits health. |
 | `archreset --soft` | Wipes and reinstalls the Arch container from Phase 3 onward (preserves validated bootstrap). |
 | `archreset --hard` | Complete reset: wipes container, configuration, launcher hooks, and state. |
-| `archreapply` | Reinstalls launcher snippets into `.bashrc`/`.zshrc` and refreshes `archkill`. |
+| `archreapply` | Reinstalls launcher snippets into `.bashrc`/`.zshrc`, refreshes `archkill`, and re-applies `termux.properties` (never overwriting an extra-keys row you configured). |
+| `archselfheal` | Re-runs the Phase 5 self-heal and audit on demand — the supported way to retry a component that broke after the install. |
+| `archfont` | Reinstalls and validates the Nerd Font only (`archfont --force` to replace a font that already looks valid). |
+| `archparu` | Reinstalls the AUR helper when `paru` is missing or won't run (e.g. a libalpm mismatch). |
 | `archbridge [port] [user]` | Connects outbound SSH tunnel to a computer over `adb reverse` (e.g. `adb reverse tcp:8022 tcp:22`). |
 
 ---
@@ -271,7 +274,14 @@ Accessible directly from any Termux shell:
 ### Advanced Environment Variables
 - `TDE_ROOTFS_URL_OVERRIDE`: Supply a custom URL to a verified Arch ARM rootfs tarball (accompanied by `<url>.sig`).
 - `TDE_SKIP_LAUNCHER=1`: Bypasses the auto-login hook when launching a Termux session.
-- `TDE_WITH_TELECOM=1`: Also installs Reticulum/Nomad Network + aria2 (off by default).
+- `TDE_WITH_TELECOM=1`: Also installs Reticulum/Nomad Network + aria2. Off by default; an interactive run asks once (default No) and remembers the answer.
+- `TDE_SKIP_TELECOM=1`: Never install telecom and never ask. Overrides everything else.
+- `TDE_TERMUX_EXTRA_KEYS='...'`: Replaces the default extra-keys row written to `termux.properties` on a fresh install. An existing row of your own is never overwritten.
+- `TDE_TERMUX_BLACK_UI=1`: Opt in to the all-black Termux UI (`use-black-ui`). Not applied by default.
+- `TDE_NERDFONT_ATTEMPTS=N`: How many times the font install retries the pacman-then-zip chain (default 3).
+- `TDE_LAUNCHER_SMOKE_TIMEOUT=N`: Seconds the launcher waits for the container to prove it is healthy before leaving you in Termux (default 25).
+- `TDE_NO_SELF_HEAL=1`: Stop re-running Phase 5 on later runs even when recoverable warnings remain.
+- `TDE_LOG_KEEP=N`: How many logs of each kind to keep in `~/.config/termux-dev-env/logs/` (default 20).
 - `TDE_NO_AUTO_RESTART=1`: Don't restart the shell (and jump into Arch) when the installer finishes.
 - `TDE_DRY_RUN=1`: Same as `--dry-run`.
 
@@ -280,8 +290,25 @@ Accessible directly from any Termux shell:
 ## Known Limitations
 
 - **Isolated Storage**: Container runs with `--isolated` (proot filesystem isolation). Android `/sdcard` is not mounted inside the container by default.
-- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux once from Android Settings and reopen it.
+- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux once from Android Settings and reopen it — Android caches the font per app, so a reload alone is sometimes not enough. `archfont` reinstalls and validates it.
+- **First `nvim` launch**: Mason installs the LSP servers the first time you open Neovim interactively, not during the install. Expect one slow first launch with Mason windows; let it finish before quitting.
 - **Architecture**: Exclusively supports 64-bit ARM (`aarch64`). 32-bit ARM (`armv7l`) and x86_64 devices are not supported.
+
+## Repository layout
+
+```
+core.sh            # thin launcher — runs src/core.sh (this is still the command you run)
+src/core.sh        # phase orchestration
+src/lib/           # reusable helpers (logging, state, locking, verification, cleanup)
+src/components/    # one file per installation step
+tests/             # test_pure_logic.sh (unit cases) + verify_all.sh (full round)
+docs/              # TROUBLESHOOTING.md, ERROR_CODES.md
+```
+
+Phase 6 copies `src/lib` and `src/components` into
+`$PREFIX/share/termux-dev-env` as a flat `lib/` + `components/`, which is
+what the `arch*` maintenance commands source at runtime — they never
+depend on the repository being present.
 
 ## Reporting a problem
 
