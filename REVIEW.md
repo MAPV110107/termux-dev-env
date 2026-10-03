@@ -1,11 +1,10 @@
 # Code review — termux-dev-env v0.5.0
 
-Reviewed at commit `3b354a4`. **Every finding below has been fixed (except the README
-length, skipped at your request) — see
-§7 Resolution.**
+**Status: every finding below is fixed, except the README's length (skipped at your
+request). See §7 Resolution.**
 
-Reviewed at commit `3b354a4`. ~5,650 lines of Bash across `core.sh`, `lib/` (14 files),
-`components/` (10 files), `tests/` (3 files), plus README + 2 docs.
+Reviewed at commit `3b354a4`. ~5,650 lines of Bash across `core.sh`, `lib/` (15 files),
+`components/` (10 files), `tests/` (3 runners + 35 case files), plus README + 2 docs.
 
 ## 1. What it is
 
