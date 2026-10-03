@@ -308,3 +308,38 @@ assert_eq "no source uses a bare 'archarm' literal instead of the variable" "0" 
 assert_pass "TDE_DISTRO_NAME set in the environment is honoured" bash -c "
   grep -q 'TDE_DISTRO_NAME:-archarm' '$SCRIPT_DIR/core.sh'
 "
+
+# --- proot version parsing (found while exporting a release zip) ---
+# The old parse took the first digits anywhere in `proot --version
+# 2>&1`, so with proot absent it read the shell's own error text — a
+# line number, or any digit in the script's path. Unpacking the project
+# into /tmp/tmp.At1lU2qEqz was enough to abort the install with
+# "proot version too old (1)".
+_proot_env() {
+  echo "
+    source '$SCRIPT_DIR/lib/error_handling.sh'
+    source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
+    source '$SCRIPT_DIR/lib/network.sh'
+    source '$SCRIPT_DIR/lib/kv.sh'; source '$SCRIPT_DIR/lib/state.sh'
+    source '$SCRIPT_DIR/lib/validate_env.sh'
+  "
+}
+assert_pass "a missing proot warns instead of claiming the version is too old" bash -c "$(_proot_env)
+  command() { if [ \"\$2\" = proot ]; then return 1; fi; builtin command \"\$@\"; }
+  out=\"\$(phase1_check_proot_version 2>&1)\"
+  grep -qi 'not found on PATH' <<< \"\$out\" && ! grep -qi 'too old' <<< \"\$out\""
+assert_pass "a path full of digits cannot be mistaken for a version" bash -c "$(_proot_env)
+  proot() { echo '/tmp/tmp.At1lU2qEqz/lib/validate_env.sh: line 123: proot: command not found'; return 127; }
+  out=\"\$(phase1_check_proot_version 2>&1)\"
+  ! grep -qi 'too old' <<< \"\$out\""
+assert_pass "a genuinely old proot is still rejected" bash -c "$(_proot_env)
+  proot() { echo 'proot v4.2.1'; }
+  # Subshell: log_fatal exits the shell outright, so without one the
+  # negation never gets to run.
+  ! ( phase1_check_proot_version ) 2>/dev/null"
+assert_pass "a current proot passes" bash -c "$(_proot_env)
+  proot() { echo 'proot v5.1.107'; }
+  phase1_check_proot_version >/dev/null 2>&1"
+assert_pass "the version is read from the real pattern, not the first digit" bash -c "$(_proot_env)
+  proot() { echo 'proot v5.1.107 built on 2 Jan 1970'; }
+  phase1_check_proot_version >/dev/null 2>&1"

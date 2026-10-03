@@ -120,10 +120,30 @@ phase1_check_proot_version() {
   # proot-distro v5 needs a recent proot; an old one fails later with an
   # unrelated-looking "unknown program 'loader'" error instead of here.
   local proot_version_str major
+
+  # Checked separately from the version parse. With 2>&1 a missing proot
+  # yields the shell's own error text ("…/validate_env.sh: line 123:
+  # proot: command not found"), and scraping the first digits out of
+  # that picked up the line number — or any digit in the script's path,
+  # which is how an export unpacked into /tmp/tmp.At1lU2qEqz aborted
+  # with "proot version too old (1)".
+  if ! command -v proot >/dev/null 2>&1; then
+    log_warn "proot not found on PATH — proot-distro normally installs it; if the container fails to start, run 'pkg install proot'"
+    return 0
+  fi
+
   proot_version_str="$(proot --version 2>&1 | head -n1 || true)"
   log_info "proot version: ${proot_version_str:-unknown}"
-  major="$(echo "$proot_version_str" | grep -oE '[0-9]+' | head -n1 || true)"
-  if [[ "$major" =~ ^[0-9]+$ ]] && [ "$major" -lt 5 ]; then
+  # Anchored on a real version pattern (optionally prefixed by "proot"
+  # or "version"), never on "any number anywhere in the output".
+  major="$(printf '%s' "$proot_version_str" |
+           grep -oiE '(proot[[:space:]]+|version[[:space:]]+)?v?[0-9]+\.[0-9]+' |
+           head -n1 | grep -oE '[0-9]+' | head -n1 || true)"
+  if [ -z "$major" ]; then
+    log_warn "Could not read the proot version from: ${proot_version_str:-<no output>} — continuing (proot-distro will report a real incompatibility itself)"
+    return 0
+  fi
+  if [ "$major" -lt 5 ]; then
     log_fatal "proot version too old ($proot_version_str) — run 'pkg upgrade proot' first"
   fi
 }
