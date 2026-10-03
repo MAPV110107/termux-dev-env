@@ -201,7 +201,7 @@ phase3_rootfs_ok() {
 # (mirror.archlinuxarm.org), which is exactly the single point of
 # failure behind "Resolving timed out" errors on flaky connections.
 phase3_write_pacman_mirrorlist() {
-  local mirror line mirrorlist_body
+  local mirror mirrorlist_body
   mirrorlist_body=""
   for mirror in "${TDE_ARM_MIRRORS[@]}"; do
     mirrorlist_body="${mirrorlist_body}Server = http://${mirror}/\$arch/\$repo

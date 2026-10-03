@@ -22,8 +22,21 @@ ok()   { echo "  OK    $*"; }
 
 echo "== 1. syntax (bash -n) =="
 bad=0
-for f in $(find . -name '*.sh' -not -path './.git/*'); do bash -n "$f" 2>/dev/null || { fail "syntax: $f"; bad=1; }; done
+while IFS= read -r f; do bash -n "$f" 2>/dev/null || { fail "syntax: $f"; bad=1; }; done < <(find . -name '*.sh' -not -path './.git/*')
 [ "$bad" = 0 ] && ok "all scripts parse"
+
+echo "== 1b. shellcheck (-S warning) =="
+# Skipped, not failed, when shellcheck isn't installed: this suite has to
+# stay runnable on the target device (Termux), where shellcheck is an
+# extra package nobody needs just to install a dev environment. CI always
+# has it, so the gate is still enforced on every push.
+if command -v shellcheck >/dev/null 2>&1; then
+  sc_out="$(shellcheck -S warning -s bash core.sh lib/*.sh components/*.sh tests/*.sh 2>&1)"
+  if [ -z "$sc_out" ]; then ok "shellcheck clean ($(shellcheck --version | awk '/version:/{print $2}'))"
+  else fail "shellcheck"; echo "$sc_out" | head -40; fi
+else
+  echo "  SKIP  shellcheck not installed (pkg install shellcheck / pip install shellcheck-py)"
+fi
 
 echo "== 2. unit tests =="
 out="$(bash tests/test_pure_logic.sh 2>&1)"

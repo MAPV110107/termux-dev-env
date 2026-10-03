@@ -17,20 +17,12 @@ _run() {
   fi
 }
 
-# Centralized prompt: returns the default immediately under --dry-run
-# without touching the terminal. Every interactive read in phases 3/4
-# goes through this, so a future refactor that calls a prompt function
-# directly (bypassing a *_run guard) still can't make dry-run interactive.
-_prompt() {
-  local prompt_text="$1" default_value="${2:-}"
-  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    echo "$default_value"
-    return 0
-  fi
-  local input
-  read -r -p "$prompt_text" input
-  echo "${input:-$default_value}"
-}
+# _prompt now lives in lib/prompt.sh, sourced unconditionally by core.sh
+# (phase 3/4 components call it on resumed runs where this file never
+# gets sourced at all). Sourced here too so this file stays usable on
+# its own, e.g. from a maintenance script that only wants phase 1.
+# shellcheck source=lib/prompt.sh
+. "$(dirname "${BASH_SOURCE[0]}")/prompt.sh"
 
 phase1_check_termux() {
   if [ -z "${PREFIX:-}" ] || [ ! -d "$PREFIX" ]; then

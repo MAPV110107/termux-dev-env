@@ -19,7 +19,9 @@ TDE_SHARE_DIR="$PREFIX/share/termux-dev-env"
 
 phase6_install_shared_copy() {
   mkdir -p "$TDE_SHARE_DIR"
-  rm -rf "$TDE_SHARE_DIR/lib" "$TDE_SHARE_DIR/components"
+  # ${var:?} guard: if TDE_SHARE_DIR were ever empty (an unset PREFIX in a
+  # future caller), the bare form would expand to "rm -rf /lib /components".
+  rm -rf "${TDE_SHARE_DIR:?}/lib" "${TDE_SHARE_DIR:?}/components"
   cp -r "$TDE_ROOT/lib" "$TDE_SHARE_DIR/lib"
   cp -r "$TDE_ROOT/components" "$TDE_SHARE_DIR/components"
   cp "$TDE_ROOT/VERSION" "$TDE_SHARE_DIR/VERSION" 2>/dev/null || true

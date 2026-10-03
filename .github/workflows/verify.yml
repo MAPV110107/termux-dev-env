@@ -1,0 +1,25 @@
+name: verify
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      # Runs every round in tests/verify_all.sh: bash -n, shellcheck,
+      # the 130+ unit checks, the source-order trace, the undefined-function
+      # and bare-~/ static checks, the generated maintenance scripts, the
+      # error-code audit and the idempotency check. Round 8 (the full
+      # core.sh dry-run) self-skips unless /data/data/com.termux is
+      # creatable, which it is on a GitHub runner.
+      - name: tests/verify_all.sh
+        run: bash tests/verify_all.sh

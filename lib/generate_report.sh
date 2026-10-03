@@ -6,7 +6,9 @@
 TDE_GENERATE_REPORT_LOADED=1
 
 TDE_REPORT_FILE="$HOME/.config/termux-dev-env/logs/install_report_$(date +%Y%m%d_%H%M%S).log"
-TDE_AUDIT_HAD_CRITICAL_FAILURE=0
+# Exported: read by phase5_print_summary in lib/verify_functional.sh, which
+# is analysed by shellcheck as a separate file and so cannot see the use.
+export TDE_AUDIT_HAD_CRITICAL_FAILURE=0
 
 _audit_check() {
   local label="$1" severity_on_fail="$2"
@@ -16,7 +18,7 @@ _audit_check() {
   else
     echo "  [$severity_on_fail] $label" | tee -a "$TDE_REPORT_FILE"
     if [ "$severity_on_fail" = "CRITICAL" ]; then
-      TDE_AUDIT_HAD_CRITICAL_FAILURE=1
+      export TDE_AUDIT_HAD_CRITICAL_FAILURE=1
     fi
   fi
   return 0

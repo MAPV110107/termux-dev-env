@@ -18,6 +18,8 @@ source "$SCRIPT_DIR/lib/logging.sh"
 source "$SCRIPT_DIR/lib/network.sh"
 # shellcheck source=lib/lock.sh
 source "$SCRIPT_DIR/lib/lock.sh"
+# shellcheck source=lib/prompt.sh
+source "$SCRIPT_DIR/lib/prompt.sh"
 # shellcheck source=lib/kv.sh
 source "$SCRIPT_DIR/lib/kv.sh"
 # shellcheck source=lib/state.sh
@@ -269,6 +271,6 @@ if [ "$TDE_DRY_RUN" != "1" ] && [ -z "${TDE_NO_AUTO_RESTART:-}" ] && [ -t 0 ] &&
   # reason to keep looking at. \033c is a full terminal reset (closer to
   # how a fresh Termux session actually starts) rather than just
   # scrolling the log out of view.
-  printf '\\033c'
+  printf '\033c'
   exec "${SHELL:-bash}" -l
 fi
