@@ -14,6 +14,7 @@ assert_pass "install_paru builds with makepkg -s (no -i) as the user" bash -c "
   BUILD_CMD=''
   proot-distro() {
     case \"\$*\" in
+      *'paru --version'*) return 1 ;;      # the skip-if-present gate: paru does not run
       *'command -v paru'*) return 1 ;;
       *'command -v makepkg'*) return 0 ;;
       *'--user'*'bash -c'*) BUILD_CMD=\"\${*: -1}\"; return 0 ;;
@@ -33,6 +34,7 @@ assert_pass "install_paru installs the built package as root via pacman -U, not 
   ROOT_INSTALL_CMD=''
   proot-distro() {
     case \"\$*\" in
+      *'paru --version'*) return 1 ;;      # the skip-if-present gate: paru does not run
       *'command -v paru'*) return 1 ;;
       *'command -v makepkg'*) return 0 ;;
       *'--user'*'bash -c'*) return 0 ;;  # build step, as the user

@@ -9,7 +9,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 TDE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TDE_SRC_DIR="$SCRIPT_DIR"
 export TDE_ROOT TDE_SRC_DIR
-export TDE_DISTRO_NAME="archarm"
+# Overridable so a second environment can be installed side by side, or
+# an existing container with another name can be adopted; everything
+# else in the project reads this variable rather than the literal.
+export TDE_DISTRO_NAME="${TDE_DISTRO_NAME:-archarm}"
 export PREFIX="${PREFIX:-/data/data/com.termux/files/usr}"
 export TMPDIR="${TMPDIR:-$PREFIX/tmp}"
 mkdir -p "$TMPDIR" 2>/dev/null || true
@@ -289,6 +292,13 @@ else
 fi
 
 log_info "termux-dev-env: installation complete. Maintenance commands: archhealth, archdiag, archselfheal, archupdate, archreset, archreapply, archfont, archparu, archbridge."
+# Said here, at the point someone is about to open Neovim for the first
+# time, because it is otherwise read as the install having failed: the
+# first interactive nvim is slow and full of Mason windows.
+log_info "First time you open 'nvim', Mason installs the LSP servers — that first launch is slow and shows installer windows. Let it finish before quitting."
+if [ "$(state_get PHASE5_WARNINGS)" = "1" ]; then
+  log_warn "Some optional components are still missing (see the audit above). Run 'archselfheal' to retry them, or 'archhealth' for the current state."
+fi
 
 # Drops straight into Arch instead of leaving the person in the same
 # Termux shell the installer ran in — that shell started before the

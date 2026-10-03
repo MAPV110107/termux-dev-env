@@ -12,6 +12,7 @@ assert_fail "install_paru fails (non-fatal) when makepkg is missing" bash -c "
   source '$SCRIPT_DIR/components/dev_toolchain.sh'
   proot-distro() {
     case \"\$*\" in
+      *'paru --version'*) return 1 ;;
       *'command -v paru'*) return 1 ;;
       *'command -v makepkg'*) return 1 ;;
       *) return 0 ;;

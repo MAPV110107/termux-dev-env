@@ -622,6 +622,61 @@ with no real smartcard device to talk to). If pacman still misbehaves,
 check these landed: `archdiag` reports rootfs health, or manually verify
 with `proot-distro login archarm -- grep DisableSandbox /etc/pacman.conf`.
 
+## The extra-keys row (ESC, CTRL, arrows) disappeared from my keyboard
+
+Versions up to 0.5.0 wrote `extra-keys = []` into
+`~/.termux/termux.properties`, which hides the row entirely. From 0.6.0
+the installer never writes an empty row and never touches a row you
+configured yourself, but it cannot safely guess whether an existing
+`extra-keys = []` was your choice or its own old bug — so it warns
+instead of overwriting.
+
+To get the row back:
+
+```bash
+# delete the 'extra-keys = []' line, then:
+archreapply
+```
+
+`archreapply` rewrites `termux.properties` (adding the default
+ESC/CTRL/TAB/arrows row only when no row is configured) and reloads the
+settings. To use your own layout instead, set `TDE_TERMUX_EXTRA_KEYS`
+before running `./core.sh`.
+
+## Icons are still boxes after the install (Nerd Font)
+
+Two different causes, in order of likelihood:
+
+1. **Android cached the old font.** The font is applied with
+   `termux-reload-settings`, but Android caches a per-app font and
+   sometimes ignores the reload. Force-stop Termux from
+   Android Settings > Apps > Termux > Force stop, then reopen it.
+2. **The font never installed, or installed truncated.** Run
+   `archfont` — it validates the file (size *and* TTF/OTF magic bytes)
+   and reinstalls it if it is missing or damaged. `archfont --force`
+   replaces a font that already looks valid.
+
+If glyphs are broken *inside* the container but fine in Termux, it is a
+locale problem rather than a font one — see the locale warning the
+installer prints, or run `archhealth`.
+
+## Something broke after the install finished
+
+`archselfheal` re-runs Phase 5's self-heal and audit on demand: it
+retries the recoverable components (Nerd Font, telecom if you selected
+it) and prints the full component report. The installer also leaves
+Phase 5 eligible to run again on the next `./core.sh` while any
+recoverable warning remains; `TDE_NO_SELF_HEAL=1` turns that off.
+
+## "Another termux-dev-env process is already running"
+
+The lock file now records the PID of the process holding it, and the
+message names it. If that PID is alive, wait for it or `kill <pid>`. If
+the message instead says the recorded process is gone (an OOM kill, a
+closed Termux session), it tells you the exact `rm -f` to run — the
+lock is never broken automatically, because doing so during a real
+concurrent run is how a half-installed container happens.
+
 ## `archbridge` can't connect
 
 `archbridge` only handles the phone side (the `ssh` call). The tunnel

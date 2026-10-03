@@ -50,8 +50,12 @@ phase4_install_paru() {
   local username
   username="$(state_get ARCH_USERNAME)"
 
-  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- command -v paru >/dev/null 2>&1; then
-    log_info "paru already installed, skipping"
+  # `paru --version`, not `command -v paru`: a paru-bin left over from an
+  # earlier run can be on PATH and still be dead on a libalpm soname
+  # change (see the comment further down), and "already installed,
+  # skipping" would then hand back a broken AUR helper for good.
+  if proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru --version >/dev/null 2>&1; then
+    log_info "paru already installed and working, skipping"
     return 0
   fi
 
@@ -106,16 +110,29 @@ phase4_install_paru() {
   # only as a fallback since it costs a real Rust compile.
   if ! proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- paru --version >/dev/null 2>&1; then
     log_warn "paru-bin installed but doesn't run (likely a libalpm version mismatch) — rebuilding paru from source instead, this compiles Rust so it's slower"
+    # MAKEFLAGS/CARGO_BUILD_JOBS pinned to 1: this is the single most
+    # memory-hungry thing the installer does, and a parallel rustc on a
+    # phone is what Android's low-memory killer reaches for first.
+    # Slower, but a build that finishes beats a build that gets killed.
+    local paru_rc=0
     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- bash -c '
       set -e
+      export MAKEFLAGS="-j1" CARGO_BUILD_JOBS=1
       rm -rf /tmp/paru
       git clone --depth 1 https://aur.archlinux.org/paru.git /tmp/paru
       cd /tmp/paru
       makepkg -s --noconfirm
-    ' < /dev/null || {
-      log_warn "Rebuilding paru from source failed too — AUR packages won't be available. Retry later: proot-distro login $TDE_DISTRO_NAME --user $username -- sh -c 'cd /tmp/paru && makepkg -s --noconfirm'"
+    ' < /dev/null || paru_rc=$?
+    if [ "$paru_rc" -ne 0 ]; then
+      # 137 = 128+9: SIGKILL, which on Android effectively always means
+      # the low-memory killer rather than a compile error.
+      if [ "$paru_rc" -eq 137 ]; then
+        log_warn "The paru build was killed by Android (out of memory, exit 137). AUR packages won't be available — everything else is unaffected. To retry: close other apps, keep Termux in the foreground, and run 'archparu'."
+      else
+        log_warn "Rebuilding paru from source failed too (exit $paru_rc) — AUR packages won't be available. Retry with: archparu"
+      fi
       return 1
-    }
+    fi
     proot-distro login "$TDE_DISTRO_NAME" -- bash -c '
       set -e
       shopt -s nullglob

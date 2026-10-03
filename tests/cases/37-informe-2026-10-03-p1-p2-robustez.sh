@@ -278,3 +278,33 @@ assert_pass "state_del is a no-op under --dry-run, like state_set" bash -c "
   TDE_DRY_RUN=1 state_del KEEPME >/dev/null
   [ \"\$(state_get KEEPME)\" = 1 ]
 "
+
+# --- 4.1 paru: OOM-aware, and "installed" must mean "runs" ---
+assert_pass "the paru skip-if-present check requires paru to actually run" bash -c "
+  sed -n '/^phase4_install_paru()/,/^}/p' '$SCRIPT_DIR/components/dev_toolchain.sh' |
+    head -20 | grep -q 'paru --version'
+"
+assert_pass "the Rust rebuild is serialised to survive Android's memory limits" bash -c "
+  grep -q 'CARGO_BUILD_JOBS=1' '$SCRIPT_DIR/components/dev_toolchain.sh'
+"
+assert_pass "an OOM-killed paru build (137) is reported as out of memory" bash -c "
+  sed -n '/^phase4_install_paru()/,/^}/p' '$SCRIPT_DIR/components/dev_toolchain.sh' |
+    grep -A2 'eq 137' | grep -qi 'out of memory'
+"
+assert_pass "a failed paru points at archparu rather than a manual makepkg" bash -c "
+  sed -n '/^phase4_install_paru()/,/^}/p' '$SCRIPT_DIR/components/dev_toolchain.sh' | grep -q 'archparu'
+"
+
+# --- the container name is a variable, not a literal, everywhere ---
+# Every mention must be a ":-archarm" fallback (core.sh, the shared
+# helpers, and the generated commands each need their own default
+# because they run standalone) — never a bare literal that would ignore
+# TDE_DISTRO_NAME.
+assert_eq "no source uses a bare 'archarm' literal instead of the variable" "0" \
+  "$(grep -rno 'archarm' "$SCRIPT_DIR"/core.sh "$SCRIPT_DIR"/lib/*.sh "$SCRIPT_DIR"/components/*.sh |
+     while IFS=: read -r f n _; do
+       sed -n "${n}p" "$f" | grep -q -- ':-archarm' || echo "$f:$n"
+     done | wc -l)"
+assert_pass "TDE_DISTRO_NAME set in the environment is honoured" bash -c "
+  grep -q 'TDE_DISTRO_NAME:-archarm' '$SCRIPT_DIR/core.sh'
+"
