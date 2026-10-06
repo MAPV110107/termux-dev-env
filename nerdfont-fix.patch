@@ -1,0 +1,196 @@
+diff --git a/README.md b/README.md
+index 787bdc5..f1e0616 100644
+--- a/README.md
++++ b/README.md
+@@ -290,7 +290,7 @@ Accessible directly from any Termux shell:
+ ## Known Limitations
+ 
+ - **Isolated Storage**: Container runs with `--isolated` (proot filesystem isolation). Android `/sdcard` is not mounted inside the container by default.
+-- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux once from Android Settings and reopen it — Android caches the font per app, so a reload alone is sometimes not enough. `archfont` reinstalls and validates it.
++- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux (not just reload) once from Android Settings and reopen it — Android caches the font per app, so a reload alone is sometimes not enough. `archfont` reinstalls and validates it.
+ - **First `nvim` launch**: Mason installs the LSP servers the first time you open Neovim interactively, not during the install. Expect one slow first launch with Mason windows; let it finish before quitting.
+ - **Architecture**: Exclusively supports 64-bit ARM (`aarch64`). 32-bit ARM (`armv7l`) and x86_64 devices are not supported.
+ 
+diff --git a/docs/TROUBLESHOOTING.md b/docs/TROUBLESHOOTING.md
+index 6635b1e..94b0c25 100644
+--- a/docs/TROUBLESHOOTING.md
++++ b/docs/TROUBLESHOOTING.md
+@@ -25,6 +25,19 @@ reopen it. There's no way to verify from a script that Android actually
+ picked up the new font; this is an inherent platform limitation, not a
+ bug in the installer.
+ 
++To tell "file is fine, Android has not applied it" apart from "file is
++broken":
++
++```bash
++ls -lh ~/.termux/font.ttf          # exists, > 100 KB
++od -An -tx1 -N4 ~/.termux/font.ttf # 00 01 00 00  or  4f 54 54 4f
++printf '\ue0b0 \uf07c \n'          # boxes here = not loaded yet: force-stop
++```
++
++The installer deletes `font.ttf` before writing the new one, so a fresh
++inode is always created; if boxes remain, run `archfont --force`, then
++force-stop Termux (`adb shell am force-stop com.termux` also works).
++
+ ## `chsh` didn't make zsh the default shell in Termux
+ 
+ Some Termux/Android combinations don't accept `chsh -s $PREFIX/bin/zsh`
+diff --git a/src/components/install_maintenance.sh b/src/components/install_maintenance.sh
+index b9d6ad1..b08116e 100644
+--- a/src/components/install_maintenance.sh
++++ b/src/components/install_maintenance.sh
+@@ -327,6 +327,7 @@ fi
+ if nerdfont_file_ok; then
+   echo "A valid Nerd Font is already installed (~/.termux/font.ttf). Use 'archfont --force' to reinstall it."
+   echo "If icons still show as boxes, force-stop Termux (Android Settings > Apps > Termux > Force stop) and reopen it."
++  echo "(termux-reload-settings is not enough: Android caches the font per app process.)"
+   exit 0
+ fi
+ 
+diff --git a/src/components/nerdfonts.sh b/src/components/nerdfonts.sh
+index 1a9e860..2f1d113 100644
+--- a/src/components/nerdfonts.sh
++++ b/src/components/nerdfonts.sh
+@@ -56,6 +56,26 @@ nerdfont_file_ok() {
+ _nerdfont_print_forcestop_hint() {
+   log_info "If icons still show as empty boxes: force-stop Termux (Android Settings > Apps > Termux > Force stop) and open it again — Android caches the terminal font per app, and a reload cannot always evict it."
+ }
++
++# The same advice as above, but impossible to miss in the install
++# scrollback: a separated block on stderr, in colour on a terminal. This
++# is the single most common "it looks broken" report, and a one-line
++# log_info between dozens of install lines does not get read. Always
++# returns 0 so a caller under set -e is never aborted by a notice.
++_nerdfont_print_forcestop_banner() {
++  local b="" r="" line="============================================================"
++  if [ -t 2 ]; then b=$'\033[1;33m'; r=$'\033[0m'; fi
++  {
++    printf '\n%s%s\n' "$b" "$line"
++    printf '[IMPORTANT] Nerd Font installed.\n'
++    printf 'If icons still show as boxes:\n'
++    printf '  1. Android Settings > Apps > Termux > Force stop\n'
++    printf '  2. Open Termux again\n'
++    printf 'Or from a computer: adb shell am force-stop com.termux\n'
++    printf '%s%s\n\n' "$line" "$r"
++  } >&2
++  return 0
++}
+ phase4_install_nerdfont_pkg() {
+   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed "$TDE_NERDFONT_PKG" 2>>"$TDE_LOG_FILE" || return 1
+ 
+@@ -89,6 +109,11 @@ phase4_install_nerdfont_pkg() {
+     rm -f "$tmp_font"
+     return 1
+   fi
++  # Delete first, then move: Android's font renderer mmaps font.ttf, and
++  # replacing the file in place can leave it looking at the old inode
++  # until the renderer is reinitialised. A fresh inode cannot be confused
++  # with the old mapping.
++  rm -f "$HOME/.termux/font.ttf"
+   mv "$tmp_font" "$HOME/.termux/font.ttf"
+ }
+ 
+@@ -136,6 +161,8 @@ phase4_extract_and_install_nerdfont() {
+     log_warn "The font extracted from the zip ($mono_ttf) is truncated or not a TTF — skipping"
+     return 1
+   fi
++  # Same reason as the pacman path: new inode, never an in-place overwrite.
++  rm -f "$HOME/.termux/font.ttf"
+   cp "$mono_ttf" "$HOME/.termux/font.ttf"
+   log_info "Nerd Font installed to ~/.termux/font.ttf (fallback zip download)"
+ }
+@@ -187,10 +214,10 @@ phase4_nerdfonts_run() {
+     else
+       log_warn "Nerd Font installed, but 'termux-reload-settings' wasn't found — restart Termux for icons to render"
+     fi
+-    _nerdfont_print_forcestop_hint
++    _nerdfont_print_forcestop_banner
+     return 0
+   else
+-    log_warn "Nerd Font install failed after $TDE_NERDFONT_ATTEMPTS attempts — the editor still works, just with boxes instead of icons. Phase 5 self-heal retries it, or run 'archfont' later."
++    log_warn "Nerd Font install failed after $TDE_NERDFONT_ATTEMPTS attempts — the editor still works, just with boxes instead of icons. Phase 5 self-heal retries it, or run 'archfont --force' later (then force-stop Termux from Android Settings and reopen it)."
+     return 1
+   fi
+ }
+diff --git a/src/lib/verify_functional.sh b/src/lib/verify_functional.sh
+index 24f2dba..de4d6e1 100644
+--- a/src/lib/verify_functional.sh
++++ b/src/lib/verify_functional.sh
+@@ -87,6 +87,9 @@ phase5_run_audit() {
+ 
+   echo "Optional components:" | tee -a "$TDE_REPORT_FILE"
+   _audit_check "Nerd Font" WARNING phase5_nerdfont_ok
++  if ! phase5_nerdfont_ok >/dev/null 2>&1; then
++    echo "           Run: archfont --force   then force-stop Termux from Android Settings and reopen it." | tee -a "$TDE_REPORT_FILE"
++  fi
+   if phase5_telecom_selected; then
+     _audit_check "Reticulum/Nomad Network" WARNING phase5_rns_ok
+     _audit_check "aria2"                   WARNING phase5_aria2_ok
+diff --git a/tests/cases/38-informe-2026-10-04-nerdfont-rm-before-write-banner.sh b/tests/cases/38-informe-2026-10-04-nerdfont-rm-before-write-banner.sh
+new file mode 100644
+index 0000000..b33d488
+--- /dev/null
++++ b/tests/cases/38-informe-2026-10-04-nerdfont-rm-before-write-banner.sh
+@@ -0,0 +1,62 @@
++# Test case file for tests/test_pure_logic.sh — sourced by the runner,
++# not executed on its own: it relies on the runner's harness
++# (assert_eq / assert_pass / assert_fail, $FAILURES, $TESTROOT,
++# $SCRIPT_DIR). Run: bash tests/test_pure_logic.sh
++echo ""
++echo "=== informe 2026-10-04: Nerd Font rm-before-write + force-stop banner ==="
++
++NF4="$TESTROOT/nf4"; mkdir -p "$NF4"
++head -c 200000 /dev/zero > "$NF4/body.bin"
++{ printf '\x00\x01\x00\x00'; cat "$NF4/body.bin"; } > "$NF4/real.ttf"
++{ printf 'OTTO'; cat "$NF4/body.bin"; } > "$NF4/otf.ttf"
++_nf4_env() {
++  echo "
++    export HOME=\"$NF4/home_\$\$\"; rm -rf \"\$HOME\"; mkdir -p \"\$HOME/.termux\"
++    source '$SCRIPT_DIR/lib/error_handling.sh'
++    source '$SCRIPT_DIR/lib/logging.sh'; log_init >/dev/null
++    source '$SCRIPT_DIR/components/nerdfonts.sh'
++  "
++}
++
++assert_pass "zip path: an existing font.ttf is replaced, never overwritten in place" bash -c "$(_nf4_env)
++  export TDE_NERDFONT_TMPDIR='$NF4/zipwork'; mkdir -p \"\$TDE_NERDFONT_TMPDIR\"
++  cp '$NF4/real.ttf' \"\$TDE_NERDFONT_TMPDIR/JetBrainsMonoNerdFontMono-Regular.ttf\"
++  unzip() { return 0; }
++  cp '$NF4/otf.ttf' \"\$HOME/.termux/font.ttf\"
++  ln \"\$HOME/.termux/font.ttf\" \"\$HOME/old_inode\"
++  phase4_extract_and_install_nerdfont >/dev/null 2>&1
++  [ \"\$(head -c4 \"\$HOME/old_inode\")\" = OTTO ] && [ \"\$(od -An -tx1 -N4 \"\$HOME/.termux/font.ttf\" | tr -d ' \\n')\" = 00010000 ]
++"
++assert_pass "pacman path: an existing font.ttf is replaced, never overwritten in place" bash -c "$(_nf4_env)
++  export TDE_DISTRO_NAME=archarm TDE_NERDFONT_PKG=x TDE_LOG_FILE=/dev/null
++  proot-distro() {
++    case \"\$*\" in
++      *'pacman -Ql'*) echo 'x /usr/share/fonts/X/NerdFontMono-Regular.ttf' ;;
++      *' cat '*)      cat '$NF4/real.ttf' ;;
++      *)              return 0 ;;
++    esac
++  }
++  cp '$NF4/otf.ttf' \"\$HOME/.termux/font.ttf\"
++  ln \"\$HOME/.termux/font.ttf\" \"\$HOME/old_inode\"
++  phase4_install_nerdfont_pkg >/dev/null 2>&1
++  nerdfont_file_ok && [ \"\$(head -c4 \"\$HOME/old_inode\")\" = OTTO ]
++"
++assert_pass "no font write onto font.ttf is left without a preceding rm -f" bash -c "
++  awk '
++    /rm -f \"\\\$HOME\\/\\.termux\\/font\\.ttf\"\$/ { rm=1; next }
++    /^[[:space:]]*(mv|cp) .*\"\\\$HOME\\/\\.termux\\/font\\.ttf\"/ { if (!rm) bad=1; rm=0 }
++    END { exit bad }
++  ' '$SCRIPT_DIR/components/nerdfonts.sh'
++"
++assert_pass "the force-stop banner is loud, names both steps and ADB, and returns 0" bash -c "$(_nf4_env)
++  set -e
++  out=\"\$(_nerdfont_print_forcestop_banner 2>&1)\"
++  grep -q 'IMPORTANT' <<< \"\$out\" && grep -q 'Force stop' <<< \"\$out\" && grep -q 'am force-stop com.termux' <<< \"\$out\"
++"
++assert_pass "a successful install prints the banner, not just the one-line hint" bash -c "
++  grep -A2 'installed\" = \"1\" \]; then' '$SCRIPT_DIR/components/nerdfonts.sh' >/dev/null &&
++  grep -q '_nerdfont_print_forcestop_banner' '$SCRIPT_DIR/components/nerdfonts.sh'
++"
++assert_pass "the audit warning for a bad Nerd Font names archfont --force" bash -c "
++  grep -q 'archfont --force' '$SCRIPT_DIR/lib/verify_functional.sh'
++"

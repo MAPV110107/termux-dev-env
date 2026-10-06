@@ -87,6 +87,9 @@ phase5_run_audit() {
 
   echo "Optional components:" | tee -a "$TDE_REPORT_FILE"
   _audit_check "Nerd Font" WARNING phase5_nerdfont_ok
+  if ! phase5_nerdfont_ok >/dev/null 2>&1; then
+    echo "           Run: archfont --force   then force-stop Termux from Android Settings and reopen it." | tee -a "$TDE_REPORT_FILE"
+  fi
   if phase5_telecom_selected; then
     _audit_check "Reticulum/Nomad Network" WARNING phase5_rns_ok
     _audit_check "aria2"                   WARNING phase5_aria2_ok

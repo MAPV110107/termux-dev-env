@@ -56,6 +56,26 @@ nerdfont_file_ok() {
 _nerdfont_print_forcestop_hint() {
   log_info "If icons still show as empty boxes: force-stop Termux (Android Settings > Apps > Termux > Force stop) and open it again — Android caches the terminal font per app, and a reload cannot always evict it."
 }
+
+# The same advice as above, but impossible to miss in the install
+# scrollback: a separated block on stderr, in colour on a terminal. This
+# is the single most common "it looks broken" report, and a one-line
+# log_info between dozens of install lines does not get read. Always
+# returns 0 so a caller under set -e is never aborted by a notice.
+_nerdfont_print_forcestop_banner() {
+  local b="" r="" line="============================================================"
+  if [ -t 2 ]; then b=$'\033[1;33m'; r=$'\033[0m'; fi
+  {
+    printf '\n%s%s\n' "$b" "$line"
+    printf '[IMPORTANT] Nerd Font installed.\n'
+    printf 'If icons still show as boxes:\n'
+    printf '  1. Android Settings > Apps > Termux > Force stop\n'
+    printf '  2. Open Termux again\n'
+    printf 'Or from a computer: adb shell am force-stop com.termux\n'
+    printf '%s%s\n\n' "$line" "$r"
+  } >&2
+  return 0
+}
 phase4_install_nerdfont_pkg() {
   proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed "$TDE_NERDFONT_PKG" 2>>"$TDE_LOG_FILE" || return 1
 
@@ -89,6 +109,11 @@ phase4_install_nerdfont_pkg() {
     rm -f "$tmp_font"
     return 1
   fi
+  # Delete first, then move: Android's font renderer mmaps font.ttf, and
+  # replacing the file in place can leave it looking at the old inode
+  # until the renderer is reinitialised. A fresh inode cannot be confused
+  # with the old mapping.
+  rm -f "$HOME/.termux/font.ttf"
   mv "$tmp_font" "$HOME/.termux/font.ttf"
 }
 
@@ -136,6 +161,8 @@ phase4_extract_and_install_nerdfont() {
     log_warn "The font extracted from the zip ($mono_ttf) is truncated or not a TTF — skipping"
     return 1
   fi
+  # Same reason as the pacman path: new inode, never an in-place overwrite.
+  rm -f "$HOME/.termux/font.ttf"
   cp "$mono_ttf" "$HOME/.termux/font.ttf"
   log_info "Nerd Font installed to ~/.termux/font.ttf (fallback zip download)"
 }
@@ -187,10 +214,10 @@ phase4_nerdfonts_run() {
     else
       log_warn "Nerd Font installed, but 'termux-reload-settings' wasn't found — restart Termux for icons to render"
     fi
-    _nerdfont_print_forcestop_hint
+    _nerdfont_print_forcestop_banner
     return 0
   else
-    log_warn "Nerd Font install failed after $TDE_NERDFONT_ATTEMPTS attempts — the editor still works, just with boxes instead of icons. Phase 5 self-heal retries it, or run 'archfont' later."
+    log_warn "Nerd Font install failed after $TDE_NERDFONT_ATTEMPTS attempts — the editor still works, just with boxes instead of icons. Phase 5 self-heal retries it, or run 'archfont --force' later (then force-stop Termux from Android Settings and reopen it)."
     return 1
   fi
 }

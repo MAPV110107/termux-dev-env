@@ -327,6 +327,7 @@ fi
 if nerdfont_file_ok; then
   echo "A valid Nerd Font is already installed (~/.termux/font.ttf). Use 'archfont --force' to reinstall it."
   echo "If icons still show as boxes, force-stop Termux (Android Settings > Apps > Termux > Force stop) and reopen it."
+  echo "(termux-reload-settings is not enough: Android caches the font per app process.)"
   exit 0
 fi
 

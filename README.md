@@ -290,7 +290,7 @@ Accessible directly from any Termux shell:
 ## Known Limitations
 
 - **Isolated Storage**: Container runs with `--isolated` (proot filesystem isolation). Android `/sdcard` is not mounted inside the container by default.
-- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux once from Android Settings and reopen it — Android caches the font per app, so a reload alone is sometimes not enough. `archfont` reinstalls and validates it.
+- **Font Rendering**: The Nerd Font is applied immediately via `termux-reload-settings`. If glyphs still look like boxes, force-stop Termux (not just reload) once from Android Settings and reopen it — Android caches the font per app, so a reload alone is sometimes not enough. `archfont` reinstalls and validates it.
 - **First `nvim` launch**: Mason installs the LSP servers the first time you open Neovim interactively, not during the install. Expect one slow first launch with Mason windows; let it finish before quitting.
 - **Architecture**: Exclusively supports 64-bit ARM (`aarch64`). 32-bit ARM (`armv7l`) and x86_64 devices are not supported.
 

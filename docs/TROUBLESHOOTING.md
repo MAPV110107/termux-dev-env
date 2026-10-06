@@ -25,6 +25,19 @@ reopen it. There's no way to verify from a script that Android actually
 picked up the new font; this is an inherent platform limitation, not a
 bug in the installer.
 
+To tell "file is fine, Android has not applied it" apart from "file is
+broken":
+
+```bash
+ls -lh ~/.termux/font.ttf          # exists, > 100 KB
+od -An -tx1 -N4 ~/.termux/font.ttf # 00 01 00 00  or  4f 54 54 4f
+printf '\ue0b0 \uf07c \n'          # boxes here = not loaded yet: force-stop
+```
+
+The installer deletes `font.ttf` before writing the new one, so a fresh
+inode is always created; if boxes remain, run `archfont --force`, then
+force-stop Termux (`adb shell am force-stop com.termux` also works).
+
 ## `chsh` didn't make zsh the default shell in Termux
 
 Some Termux/Android combinations don't accept `chsh -s $PREFIX/bin/zsh`
