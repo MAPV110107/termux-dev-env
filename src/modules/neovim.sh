@@ -117,11 +117,7 @@ end, { desc = "Toggle ZSH Terminal" })' "--" || log_warn "Could not write keymap
     extra_mason="${extra_mason}        \"rust-analyzer\",\n"
     extra_mlsp="${extra_mlsp}        \"rust_analyzer\",\n"
   fi
-  if [ "${TDE_WITH_CLANG:-0}" = "1" ] || proot-distro login "$TDE_DISTRO_NAME" -- command -v clang >/dev/null 2>&1; then
-    extra_servers="${extra_servers}        clangd = {},\n"
-    extra_mason="${extra_mason}        \"clangd\",\n"
-    extra_mlsp="${extra_mlsp}        \"clangd\",\n"
-  fi
+  
   if [ "${TDE_WITH_GO:-0}" = "1" ] || proot-distro login "$TDE_DISTRO_NAME" -- command -v go >/dev/null 2>&1; then
     extra_servers="${extra_servers}        gopls = {},\n"
     extra_mason="${extra_mason}        \"gopls\",\n"
