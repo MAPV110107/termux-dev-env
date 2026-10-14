@@ -74,7 +74,7 @@ pkg install -y git curl
 Clone `termux-dev-env` and enter the project directory:
 
 ```bash
-git clone [https://github.com/MAPV110107/termux-dev-env.git](https://github.com/MAPV110107/termux-dev-env.git) && cd termux-dev-env
+git clone https://github.com/MAPV110107/termux-dev-env.git && cd termux-dev-env
 ```
 
 ### Step 4 · Launch the Installer
