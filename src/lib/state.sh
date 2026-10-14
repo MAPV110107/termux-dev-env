@@ -61,6 +61,10 @@ state_del() {
 
 state_clear_prefix() {
   local prefix="$1" tmp
+  if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
+    log_info "[dry-run] state_clear_prefix ${prefix}_* (skipped, not persisted)"
+    return 0
+  fi
   [ -f "$TDE_STATE_FILE" ] || return 0
   tmp="$(mktemp "${TDE_STATE_FILE}.XXXXXX")"
   grep -v "^${prefix}_" "$TDE_STATE_FILE" > "$tmp" 2>/dev/null || true

@@ -11,6 +11,7 @@ _write_shebang() {
 }
 
 _write_cli_preamble() {
+  local use_lock="${2:-0}"
   cat >> "$1" << 'EOF'
 set -euo pipefail
 CONF="$HOME/.config/termux-dev-env/config.env"
@@ -22,8 +23,15 @@ cd "$PREFIX/share/termux-dev-env" || { echo "Shared files missing — run './lau
 source lib/core.sh
 log_init
 source lib/state.sh
+source lib/lock.sh
 source lib/system.sh
 EOF
+  if [ "$use_lock" = "1" ]; then
+    cat >> "$1" << 'EOF'
+lock_acquire
+trap 'lock_release' EXIT
+EOF
+  fi
 }
 
 phase6_install_shared_copy() {
