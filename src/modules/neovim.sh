@@ -153,6 +153,10 @@ return {
         vtsls = {},
         html = {},
         cssls = {},
+        clangd = {
+          mason = false,
+          enabled = vim.fn.executable("clangd") == 1,
+        },
 $(printf '%b' "$extra_servers")      },
     },
   },

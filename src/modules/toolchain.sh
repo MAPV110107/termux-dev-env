@@ -19,7 +19,7 @@ phase4_sync_and_install_toolchain() {
   # shellcheck disable=SC2086
   retry_with_backoff 3 15 \
     proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
-    base-devel git github-cli neovim tree-sitter-cli \
+    base-devel clang git github-cli neovim tree-sitter-cli \
     ripgrep fd fzf bat jq lazygit \
     nodejs npm python python-pip \
     openssh unzip zip tar wget curl nano fastfetch $extra_pkgs || \
