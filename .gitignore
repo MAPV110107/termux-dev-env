@@ -1,0 +1,7 @@
+*.swp
+*.tmp
+*.patch
+*.log
+.env
+.DS_Store
+temp*
