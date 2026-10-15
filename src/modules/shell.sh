@@ -69,11 +69,6 @@ phase4_install_ohmyzsh_and_plugins() {
 }
 
 phase4_write_zshrc_extras() {
-  if [[ -o interactive ]] && [ -t 0 ] && [ -z "${NVIM:-}" ] && [ -z "${SSH_CONNECTION:-}" ] && command -v fastfetch >/dev/null 2>&1; then
-    printf "\033c"
-    fastfetch
-  fi
-
   local username runtime_block bashrc_block
   username="$(state_get ARCH_USERNAME)"
 
@@ -92,7 +87,7 @@ command -v bat >/dev/null 2>&1 && alias cat="bat --paging=never --style=plain"
 prompt_context() {
   prompt_segment black default "%(!.%{%F{yellow}%}.)$USER@%m "
 }
-if [[ -o interactive ]] && [ -t 0 ] && command -v fastfetch >/dev/null 2>&1; then
+if [[ -o interactive ]] && [ -t 0 ] && [ -z "${NVIM:-}" ] && [ -z "${SSH_CONNECTION:-}" ] && command -v fastfetch >/dev/null 2>&1; then
   printf "\033c"
   fastfetch
 fi'

@@ -127,7 +127,7 @@ proot-distro login archarm -- cat /etc/pacman.d/mirrorlist
 
 ```bash
 proot-distro login archarm -- sh -c '
-  echo "Server = [http://os.archlinuxarm.org/](http://os.archlinuxarm.org/)\$arch/\$repo" > /etc/pacman.d/mirrorlist
+  echo "Server = http://os.archlinuxarm.org/\$arch/\$repo" > /etc/pacman.d/mirrorlist
   pacman -Syyu --noconfirm
 '
 ```
@@ -256,7 +256,7 @@ Upstream Arch Linux ARM only publishes a rolling `ArchLinuxARM-aarch64-latest.ta
 2. Run the installer with `TDE_ROOTFS_URL_OVERRIDE` (GPG signature verification against the Arch Linux ARM keyring remains enforced):
 
 ```bash
-TDE_ROOTFS_URL_OVERRIDE="[https://example.com/ArchLinuxARM-aarch64-latest.tar.gz](https://example.com/ArchLinuxARM-aarch64-latest.tar.gz)" ./launcher.sh
+TDE_ROOTFS_URL_OVERRIDE="https://example.com/ArchLinuxARM-aarch64-latest.tar.gz" ./launcher.sh
 ```
 
 ---

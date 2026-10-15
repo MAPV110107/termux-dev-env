@@ -36,6 +36,9 @@ EOF
 
 phase6_install_shared_copy() {
   mkdir -p "$TDE_SHARE_DIR"
+  if [ "$(cd "$TDE_SRC_DIR" 2>/dev/null && pwd)" = "$(cd "$TDE_SHARE_DIR" 2>/dev/null && pwd)" ]; then
+    return 0
+  fi
   rm -rf "${TDE_SHARE_DIR:?}/lib" "${TDE_SHARE_DIR:?}/modules"
   cp -r "$TDE_SRC_DIR/lib" "$TDE_SHARE_DIR/lib"
   cp -r "$TDE_SRC_DIR/modules" "$TDE_SHARE_DIR/modules"
@@ -116,7 +119,7 @@ EOF
 phase6_write_archupdate() {
   local target="$PREFIX/bin/archupdate"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 SNAP_DIR="$HOME/.config/termux-dev-env/snapshots"
 mkdir -p "$SNAP_DIR"
@@ -183,7 +186,7 @@ EOF
 phase6_write_archreapply() {
   local target="$PREFIX/bin/archreapply"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 source modules/launcher.sh
 phase3_install_zshrc_snippet
@@ -197,7 +200,7 @@ EOF
 phase6_write_archfont() {
   local target="$PREFIX/bin/archfont"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 source modules/nerdfonts.sh
 
@@ -218,7 +221,7 @@ EOF
 phase6_write_archselfheal() {
   local target="$PREFIX/bin/archselfheal"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 source modules/rootfs.sh
 source modules/user.sh
@@ -246,7 +249,7 @@ EOF
 phase6_write_archparu() {
   local target="$PREFIX/bin/archparu"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 source modules/toolchain.sh
 USERNAME="$(state_get ARCH_USERNAME)"
@@ -268,7 +271,7 @@ EOF
 phase6_write_archtreesitter() {
   local target="$PREFIX/bin/archtreesitter"
   _write_shebang "$target"
-  _write_cli_preamble "$target"
+  _write_cli_preamble "$target" 1
   cat >> "$target" << 'EOF'
 source modules/neovim.sh
 export TDE_TREESITTER_FULL=1

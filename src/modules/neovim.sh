@@ -51,7 +51,7 @@ phase4_setup_npm_global() {
   if [ "${TDE_PREINSTALL_NPM_LSP:-0}" = "1" ]; then
     log_info "Pre-installing global language servers via npm"
     proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-      npm install -g typescript eslint bash-language-server vscode-langservers-extracted @vtsls/language-server pyright || \
+      npm install -g typescript typescript-language-server eslint bash-language-server vscode-langservers-extracted pyright || \
       log_warn "Global npm LSP pre-install had warnings — Mason will manage remaining servers"
   fi
 }
@@ -146,7 +146,7 @@ return {
         marksman = {},
         pyright = {},
         ts_ls = {},
-        vtsls = {},
+        vtsls = { enabled = false },
         html = {},
         cssls = {},
         clangd = {
