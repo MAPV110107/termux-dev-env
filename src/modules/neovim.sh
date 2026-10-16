@@ -93,7 +93,19 @@ vim.diagnostic.config({
   update_in_insert = false,
   severity_sort = true,
 })
-vim.opt.shell = "/usr/bin/zsh"' "--" || log_warn "Could not write options.lua overrides"
+vim.opt.shell = "/usr/bin/zsh"
+vim.api.nvim_create_autocmd("VimEnter", {
+  once = true,
+  callback = function()
+    if #vim.api.nvim_list_uis() > 0 and vim.fn.argc() == 1 and vim.fn.isdirectory(vim.fn.argv(0)) == 0 then
+      vim.schedule(function()
+        if package.loaded["snacks"] or pcall(require, "snacks") then
+          Snacks.explorer({ focus = false })
+        end
+      end)
+    end
+  end,
+})' "--" || log_warn "Could not write options.lua overrides"
 
   # 2. Keymaps
   idempotent_append_container "$TDE_DISTRO_NAME" "$username" ".config/nvim/lua/config/keymaps.lua" "keymaps" '
@@ -199,19 +211,27 @@ EOF
 return {
   {
     "folke/snacks.nvim",
-    opts = { terminal = { shell = "/usr/bin/zsh" } },
+    opts = {
+      terminal = { shell = "/usr/bin/zsh" },
+      explorer = {
+        enabled = true,
+        replace_netrw = true,
+      },
+      picker = {
+        sources = {
+          explorer = {
+            layout = { layout = { position = "left", width = 30 } },
+          },
+        },
+      },
+    },
   },
 }
 EOF
     cat > ~/.config/nvim/lua/plugins/file-explorer.lua << "EOF"
 return {
   { "nvim-neo-tree/neo-tree.nvim", enabled = false },
-  {
-    "stevearc/oil.nvim",
-    lazy = false,
-    opts = { default_file_explorer = true, view_options = { show_hidden = true } },
-    keys = { { "-", "<cmd>Oil<cr>", desc = "Open parent directory" } },
-  },
+  { "stevearc/oil.nvim", enabled = false },
 }
 EOF
     cat > ~/.config/nvim/lua/plugins/treesitter.lua << "EOF"

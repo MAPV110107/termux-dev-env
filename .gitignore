@@ -2,6 +2,7 @@
 *.tmp
 *.patch
 *.log
+*.txt
 .env
 .DS_Store
 temp*
