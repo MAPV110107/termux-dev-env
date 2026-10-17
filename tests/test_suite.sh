@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Unified unit and regression test suite for termux-dev-env v1.0.0.
+# Unified unit and regression test suite for termux-dev-env v1.5.0.
 set -u
 
 TESTS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -75,6 +75,12 @@ TDE_DRY_RUN=1 state_set PHASE2_DONE 1
 assert_eq "state_set honours dry-run" "" "$(state_get PHASE2_DONE)"
 TDE_DRY_RUN=1 state_del PHASE1_DONE
 assert_eq "state_del honours dry-run" "1" "$(state_get PHASE1_DONE)"
+state_set TEST_PRE_A 1
+state_set TEST_PRE_B 2
+state_set TEST_OTHER 3
+state_clear_prefix TEST_PRE
+assert_eq "state_clear_prefix removes matched keys" "" "$(state_get TEST_PRE_A)"
+assert_eq "state_clear_prefix preserves unmatched keys" "3" "$(state_get TEST_OTHER)"
 
 echo "=== 2. Lock & Network ==="
 assert_pass "lock_acquire allocates dynamic FD >= 10" bash -c "
@@ -129,6 +135,12 @@ assert_pass "TDE_TREESITTER_FULL=1 expands parser list" bash -c "
   c2=\"\$(TDE_TREESITTER_FULL=1 _tde_resolve_ts_parsers | wc -w)\"
   [ \"\$c2\" -gt \"\$c1\" ]
 "
+
+echo "=== 7. Version & Toolchain Functionality ==="
+assert_eq "VERSION file is 1.5.0" "1.5.0" "$(tr -d '\n\r' < "$TDE_ROOT/VERSION")"
+assert_pass "phase4_install_npm_global_tools is defined" declare -f phase4_install_npm_global_tools
+assert_pass "phase4_npm_tools_ok is defined" declare -f phase4_npm_tools_ok
+assert_pass "phase1_install_host_adb is defined" declare -f phase1_install_host_adb
 
 echo ""
 echo "================================================"

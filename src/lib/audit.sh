@@ -41,6 +41,10 @@ phase5_self_heal() {
     log_info "Self-heal: retrying Nerd Font installation"
     phase4_nerdfonts_run || log_warn "Self-heal did not fix the Nerd Font installation"
   fi
+  if command -v phase4_npm_tools_ok >/dev/null 2>&1 && ! phase4_npm_tools_ok; then
+    log_info "Self-heal: retrying global npm tools installation (serve, pm2, pnpm)"
+    phase4_install_npm_global_tools || log_warn "Self-heal did not fix the global npm tools installation"
+  fi
 }
 
 _cleanup_if() {
@@ -82,7 +86,7 @@ phase5_run_audit() {
   _audit_check "Rootfs (Arch Linux ARM)"   CRITICAL phase3_rootfs_ok
   _audit_check "User account + sudo"       CRITICAL phase3_user_ok
   _audit_check "Launcher"                  CRITICAL phase3_launcher_ok
-  _audit_check "Dev toolchain (gcc/git)"   CRITICAL phase4_toolchain_ok
+  _audit_check "Dev toolchain (gcc/git/gh/tmux/adb)" CRITICAL phase4_toolchain_ok
   _audit_check "Shell (zsh + UTF-8)"       CRITICAL phase4_shell_ok
   _audit_check "LazyVim"                   CRITICAL phase4_lazyvim_ok
 
@@ -90,6 +94,12 @@ phase5_run_audit() {
   _audit_check "Nerd Font (Patched Mono)"  WARNING  phase5_nerdfont_ok
   if ! phase5_nerdfont_ok >/dev/null 2>&1; then
     echo "           Run: archfont --force   then force-stop Termux from Android Settings and reopen it." | tee -a "$TDE_REPORT_FILE"
+  fi
+  if command -v phase4_npm_tools_ok >/dev/null 2>&1; then
+    _audit_check "Node.js stack (serve/pm2/pnpm)" WARNING phase4_npm_tools_ok
+    if ! phase4_npm_tools_ok >/dev/null 2>&1; then
+      echo "           Run: npm install -g serve pm2 pnpm" | tee -a "$TDE_REPORT_FILE"
+    fi
   fi
 }
 

@@ -7,7 +7,7 @@ GPG-verified rootfs · Zsh + Oh My Zsh · LazyVim + LSP · Atomic Nerd Font rend
 
 <br>
 
-![Version](https://img.shields.io/badge/version-1.0.0-0d1117?style=flat-square&labelColor=b91c1c)
+![Version](https://img.shields.io/badge/version-1.5.0-0d1117?style=flat-square&labelColor=b91c1c)
 ![Platform](https://img.shields.io/badge/platform-Termux%20%7C%20Android-0d1117?style=flat-square&labelColor=21262d)
 ![Architecture](https://img.shields.io/badge/arch-aarch64-0d1117?style=flat-square&labelColor=21262d)
 ![Distro](https://img.shields.io/badge/distro-Arch%20Linux%20ARM-0d1117?style=flat-square&labelColor=21262d)
@@ -26,7 +26,7 @@ GPG-verified rootfs · Zsh + Oh My Zsh · LazyVim + LSP · Atomic Nerd Font rend
 | **Container OS** | Official Arch Linux ARM (`aarch64`), GPG-verified against the upstream signing keyring |
 | **Shell** | Zsh + Oh My Zsh (`agnoster`), `zsh-autosuggestions`, `fzf` keybindings, `fastfetch` login banner, strict `en_US.UTF-8` locale |
 | **Editor** | LazyVim (`neovim`) preconfigured with `mason.nvim`, `nvim-lspconfig`, `blink.cmp`, `snacks.nvim` explorer & terminal, and pre-compiled Treesitter parsers |
-| **Toolchain & CLI** | `base-devel` (`gcc`, `make`), `git`, `gh`, `tree-sitter-cli`, `nodejs`, `npm`, `python`, `ripgrep`, `fd`, `fzf`, `bat`, `jq`, `lazygit`, `fastfetch`, `openssh`, `paru-bin` |
+| **Toolchain & CLI** | `base-devel` (`gcc`, `make`), `git`, `gh`, `tmux`, `android-tools` (`adb`, `fastboot`), `tree-sitter-cli`, `nodejs`, `npm`, `serve`, `pm2`, `pnpm`, `python`, `ripgrep`, `fd`, `fzf`, `bat`, `jq`, `lazygit`, `fastfetch`, `openssh`, `paru-bin` |
 | **Typography** | Atomic inode-replacing installation of `JetBrainsMono Nerd Font Mono (Regular)` validated via TTF/OTF magic bytes |
 | **Resilience** | `flock` concurrency locking, exponential network backoff, self-healing audit (`Phase 5`), and standalone `arch*` CLI utilities |
 
@@ -130,8 +130,8 @@ Force a specific phase (and all subsequent dependent phases) to re-run from scra
 | **1 · Validation** | `src/lib/validate.sh` | Verifies `$PREFIX`, `aarch64`, and free disk space (`df -k`). Acquires `termux-wake-lock`. Installs host bootstrap tools (`proot-distro`, `git`, `curl`, `gnupg`). Configures battery whitelist and disables phantom process limits automatically if Shizuku (`rish`) is active. |
 | **2 · Diagnostics** | `src/lib/validate.sh` | Records RAM, free storage, CPU cores, filesystem type, zram, and Android SDK level to `~/.config/termux-dev-env/diagnostics.env`. Verifies `proot` execution against kernel `ptrace` restrictions. |
 | **3 · Core Container** | `src/modules/rootfs.sh`<br>`src/modules/user.sh`<br>`src/modules/launcher.sh` | Downloads the Arch Linux ARM tarball (`https` first, `http` fallback) and verifies its GPG signature. Configures `DisableSandbox`, `ParallelDownloads = 10`, `IgnorePkg = linux-aarch64`, and HTTPS-prioritized mirrorlist. Creates a non-root user in `wheel` with `visudo -c` validated passwordless `sudo`. Configures Termux `extra-keys` and `.bashrc`/`.zshrc` fast-path auto-login hooks with a 25s smoke-test guard. |
-| **4 · Workstation** | `src/modules/toolchain.sh`<br>`src/modules/nerdfonts.sh`<br>`src/modules/shell.sh`<br>`src/modules/neovim.sh` | Installs compilers, CLI utilities, and Neovim in a single consolidated `pacman` transaction. Configures Git globals and `paru-bin`. Installs `JetBrainsMonoNerdFontMono-Regular.ttf` with atomic inode replacement. Generates `en_US.UTF-8` locale and configures Oh My Zsh + LazyVim + Treesitter. |
-| **5 · Audit & Heal** | `src/lib/audit.sh` | Runs functional post-condition checks across all critical and visual components. Automatically retries recoverable warnings, cleans verified download caches, and writes a timestamped report to `~/.config/termux-dev-env/logs/`. |
+| **4 · Workstation** | `src/modules/toolchain.sh`<br>`src/modules/nerdfonts.sh`<br>`src/modules/shell.sh`<br>`src/modules/neovim.sh` | Installs compilers, CLI utilities (`tmux`, `android-tools` / `adb`, `github-cli` / `gh`, `lazygit`, `ripgrep`), Node.js ecosystem (`serve`, `pm2`, `pnpm`), and Neovim in a single consolidated transaction. Configures Git globals, `paru-bin`, and user npm prefix. Installs `JetBrainsMonoNerdFontMono-Regular.ttf` with atomic inode replacement. Generates `en_US.UTF-8` locale and configures Oh My Zsh + LazyVim + Treesitter. |
+| **5 · Audit & Heal** | `src/lib/audit.sh` | Runs functional post-condition checks across all critical and visual components (including toolchain and Node.js stack). Automatically retries recoverable warnings, cleans verified download caches, and writes a timestamped report to `~/.config/termux-dev-env/logs/`. |
 | **6 · Maintenance** | `src/modules/maintenance.sh` | Syncs runtime libraries to `$PREFIX/share/termux-dev-env` and deploys standalone `arch*` management commands into `$PREFIX/bin`. |
 
 ---
@@ -168,6 +168,60 @@ LazyVim is preconfigured with `have_nerd_font = true`, `termguicolors = true`, `
 | `<leader>lc` | Normal | Save buffer and run `tsc --noEmit %` type-check on demand |
 | `<leader>e` | Normal | Toggle Snacks file explorer sidebar |
 | `Ctrl + /` | Normal / Terminal | Toggle floating/split Zsh terminal inside Neovim |
+
+---
+
+## Integrated Developer Stack & Utilities
+
+`termux-dev-env` v1.5.0 automatically provisions a full modern development and runtime stack inside the Arch Linux container:
+
+### Android SDK Platform Tools (`adb`, `fastboot`)
+
+The `android-tools` suite is pre-installed inside the workstation (and verified on Termux host):
+
+- **Wireless Debugging:** Connect to other devices or local Android debugging ports:
+  ```bash
+  adb connect 127.0.0.1:5555
+  adb devices
+  ```
+- **Port Forwarding & Reverse Tunnels:** Establish reverse port tunnels for remote access:
+  ```bash
+  adb reverse tcp:8022 tcp:22
+  ```
+
+### Terminal Multiplexer (`tmux`)
+
+`tmux` allows you to manage multi-window, persistent terminal sessions that remain active even if the terminal window is temporarily suspended:
+
+- Start a named session: `tmux new -s dev`
+- Detach from session: `Ctrl + b` then `d`
+- Reattach to session: `tmux attach -t dev`
+- List active sessions: `tmux ls`
+
+### GitHub CLI (`gh`)
+
+`github-cli` provides seamless GitHub operations directly from your terminal:
+
+- Authenticate with your GitHub account:
+  ```bash
+  gh auth login
+  ```
+- Clone repositories, manage pull requests, and browse issues:
+  ```bash
+  gh repo clone owner/repo
+  gh pr list
+  gh issue create
+  ```
+
+### Web & Process Management (`serve`, `pm2`, `pnpm`)
+
+Configured under a dedicated non-root user prefix (`~/.npm-global/bin`) directly exported in your `$PATH`:
+
+| Tool | Purpose | Typical Usage |
+|:--|:--|:--|
+| **`serve`** | Zero-configuration static HTTP server for web and SPA builds | `serve -s dist -l 3000` |
+| **`pm2`** | Daemon process manager for background scripts and Node.js servers | `pm2 start app.js --name api`<br>`pm2 list`<br>`pm2 logs` |
+| **`pnpm`** | Fast, disk space-efficient Node package manager | `pnpm install`<br>`pnpm dev` |
 
 ---
 
@@ -292,6 +346,10 @@ Pass environment variables inline before `./launcher.sh` to customize installati
 | `TDE_TERMUX_BLACK_UI=1` | `0` | Write `use-black-ui = true` to `termux.properties` |
 | `TDE_LAUNCHER_SMOKE_TIMEOUT` | `25` | Timeout (seconds) for the pre-login container health check |
 | `TDE_NO_AUTO_RESTART=1` | `0` | Do not `exec` into Arch automatically when `./launcher.sh` finishes |
+| `TDE_SKIP_LAUNCHER=1` | `0` | Bypass automatic container auto-login when opening Termux |
+| `TDE_NO_SELF_HEAL=1` | `0` | Skip Phase 5 automatic self-healing retry on recoverable warnings |
+| `TDE_TS_PARSERS` | *core set* | Custom space-separated list of Treesitter parsers to compile |
+| `TDE_LOG_KEEP` | `20` | Maximum number of rotated install and audit log files to retain |
 
 ---
 
@@ -300,7 +358,7 @@ Pass environment variables inline before `./launcher.sh` to customize installati
 ```text
 termux-dev-env/
 ├── launcher.sh              # Root entry point
-├── VERSION                  # Release version (1.0.0)
+├── VERSION                  # Release version (1.5.0)
 ├── docs/
 │   ├── ARCHITECTURE.md      # Internal design and state machine overview
 │   ├── ERROR_CODES.md       # Reference table for [Exxx] fatal error codes
@@ -318,7 +376,7 @@ termux-dev-env/
 │       ├── rootfs.sh        # GPG rootfs download, keyring, pacman tuning
 │       ├── user.sh          # User creation and visudo-verified sudoers
 │       ├── launcher.sh      # Termux UI extra-keys and auto-login hooks
-│       ├── toolchain.sh     # Compilers, CLI tools, Git config, paru-bin
+│       ├── toolchain.sh     # Compilers, CLI tools, tmux, adb, npm tools, paru-bin
 │       ├── nerdfonts.sh     # Atomic Nerd Font installer & magic-byte validator
 │       ├── shell.sh         # UTF-8 locale generation and Oh My Zsh setup
 │       ├── neovim.sh        # LazyVim, dynamic LSP specs, Treesitter compiler

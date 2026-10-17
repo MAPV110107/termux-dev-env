@@ -91,6 +91,13 @@ phase1_install_base_packages() {
   done
 }
 
+phase1_install_host_adb() {
+  if ! command -v adb >/dev/null 2>&1; then
+    log_info "Attempting to install android-tools in Termux host (optional host ADB support)..."
+    _run pkg install -y android-tools 2>/dev/null || log_warn "Could not install android-tools in Termux host — container provides android-tools"
+  fi
+}
+
 phase1_check_proot_version() {
   local proot_version_str major
   if ! command -v proot >/dev/null 2>&1; then
@@ -133,6 +140,7 @@ phase1_run() {
   phase1_check_free_space
   phase1_update_packages
   phase1_install_base_packages
+  phase1_install_host_adb
   phase1_check_proot_version
   phase1_check_shizuku_optional
   log_info "Phase 1 passed"

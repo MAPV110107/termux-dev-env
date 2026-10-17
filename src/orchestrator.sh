@@ -65,7 +65,7 @@ if [ -n "$TDE_REINSTALL_PHASE" ]; then
   esac
 fi
 
-TDE_VERSION="$(cat "$TDE_ROOT/VERSION" 2>/dev/null || echo "1.0.0")"
+TDE_VERSION="$(cat "$TDE_ROOT/VERSION" 2>/dev/null || echo "1.5.0")"
 export TDE_VERSION
 log_info "termux-dev-env v${TDE_VERSION} starting"
 
@@ -74,8 +74,9 @@ _tde_migrate_config() {
   previous="$(state_get INSTALLED_VERSION)"
   [ "$previous" = "$TDE_VERSION" ] && return 0
   if [ -n "$previous" ]; then
-    log_info "Version changed ($previous -> $TDE_VERSION) — refreshing launcher, shell blocks, and maintenance CLI"
+    log_info "Version changed ($previous -> $TDE_VERSION) — refreshing launcher, toolchain, shell blocks, and maintenance CLI"
     state_del PHASE3_LAUNCHER_SETUP
+    state_del PHASE4_TOOLCHAIN
     state_del PHASE4_SHELL
     state_del PHASE6_DONE
   fi
@@ -232,7 +233,7 @@ else
   log_info "Phase 6 already completed, skipping"
 fi
 
-log_info "termux-dev-env: installation complete. Commands: archhealth, archdiag, archselfheal, archupdate, archreset, archreapply, archfont, archparu, archtreesitter, archbridge."
+log_info "termux-dev-env: installation complete. Commands: archhealth, archdiag, archselfheal, archupdate, archreset, archreapply, archfont, archparu, archtreesitter, archbridge, archkill."
 log_info "Note: On your first interactive 'nvim' launch, Mason will automatically install the configured LSP servers."
 
 if [ "$TDE_DRY_RUN" != "1" ] && [ -z "${TDE_NO_AUTO_RESTART:-}" ] && [ -t 0 ] && [ -t 1 ]; then

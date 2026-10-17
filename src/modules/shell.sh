@@ -19,6 +19,10 @@ export LANG=en_US.UTF-8
 export LC_ALL=en_US.UTF-8
 EOF
     chmod +x /etc/profile.d/tde-locale.sh
+    cat > /etc/profile.d/tde-path.sh << "EOF"
+export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"
+EOF
+    chmod +x /etc/profile.d/tde-path.sh
   ' >>"$TDE_LOG_FILE" 2>&1 || log_warn "locale-gen reported a warning — verifying output"
 
   if proot-distro login "$TDE_DISTRO_NAME" -- sh -c 'locale -a 2>/dev/null | tr "[:upper:]" "[:lower:]" | tr -d "-" | grep -q "^en_us.utf8$"'; then

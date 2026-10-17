@@ -30,11 +30,11 @@ Every fatal error in `termux-dev-env` logs a stable `[E<code>]` identifier and s
 | `E401` | Phase 4 (`orchestrator.sh`) | Toolchain post-condition check failed | Run `archhealth` or `./launcher.sh --reinstall=4` |
 | `E402` | Phase 4 (`orchestrator.sh`) | Shell post-condition check failed | Re-run `./launcher.sh --reinstall=4` |
 | `E403` | Phase 4 (`orchestrator.sh`) | LazyVim post-condition check failed | Re-run `./launcher.sh --reinstall=4` |
-| `E410` | Phase 4 (`toolchain.sh`) | `pacman -Syu` failed after 3 attempts | Switch network or retry `./launcher.sh` |
+| `E410` | Phase 4 (`toolchain.sh`) [Legacy] | Standalone `pacman -Syu` failed (consolidated into E411) | Switch network or retry `./launcher.sh` |
 | `E411` | Phase 4 (`toolchain.sh`) | Toolchain & CLI package install failed | Re-run `./launcher.sh` (pacman resumes partial downloads) |
 | `E421` | Phase 4 (`shell.sh`) | Oh My Zsh installation failed in container | Check network connectivity and retry |
 | `E422` | Phase 4 (`shell.sh`) | Could not configure `.zshrc` inside container | Re-run `./launcher.sh --reinstall=4` |
-| `E431` | Phase 4 (`neovim.sh`) | Could not configure npm global prefix | Re-run `./launcher.sh --reinstall=4` |
+| `E431` | Phase 4 (`toolchain.sh`, `neovim.sh`) | Could not configure npm global prefix | Re-run `./launcher.sh --reinstall=4` |
 | `E432` | Phase 4 (`neovim.sh`) | Could not clone LazyVim starter repository | Check GitHub connectivity and retry |
 | `E433` | Phase 4 (`neovim.sh`) | Could not prepare `~/.config/nvim/lua/plugins` | Check container home permissions |
 | `E434` | Phase 4 (`neovim.sh`) | Headless `lazy.nvim` plugin sync failed | Re-run `./launcher.sh --reinstall=4` |

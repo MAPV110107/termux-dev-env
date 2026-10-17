@@ -198,7 +198,7 @@ TDE_PREINSTALL_NPM_LSP=1 ./launcher.sh --reinstall=4
 
 ### Compiling the full Treesitter parser suite
 
-By default, `termux-dev-env` pre-compiles a core set of 16 Treesitter parsers so installation stays fast. To compile the extended ~30-language parser suite at any time:
+By default, `termux-dev-env` pre-compiles a core set of 17 Treesitter parsers so installation stays fast. To compile the extended ~30-language parser suite at any time:
 
 ```bash
 archtreesitter

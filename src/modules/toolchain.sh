@@ -19,8 +19,27 @@ phase4_sync_and_install_toolchain() {
     base-devel git github-cli neovim tree-sitter-cli \
     ripgrep fd fzf bat jq lazygit \
     nodejs npm python python-pip \
-    openssh unzip zip tar wget curl nano fastfetch $extra_pkgs || \
+    openssh unzip zip tar wget curl nano fastfetch \
+    tmux android-tools $extra_pkgs || \
     log_fatal_code 411 "Toolchain and CLI package installation failed after 3 attempts."
+}
+
+phase4_install_npm_global_tools() {
+  local username npm_global
+  username="$(state_get ARCH_USERNAME)"
+  npm_global="/home/$username/.npm-global"
+
+  log_info "Configuring npm global prefix and installing developer tools (serve, pm2, pnpm)"
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- sh -c "
+    mkdir -p \"$npm_global\"
+    npm config set prefix \"$npm_global\"
+    npm config set allow-scripts=core-js --location=user 2>/dev/null || true
+  " || log_fatal_code 431 "Could not configure npm global prefix"
+
+  retry_with_backoff 3 10 \
+    proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    npm install -g serve pm2 pnpm || \
+    log_warn "Global npm packages (serve, pm2, pnpm) could not be installed automatically — install them manually via 'npm install -g serve pm2 pnpm'"
 }
 
 phase4_configure_git() {
@@ -128,7 +147,7 @@ phase4_dev_toolchain_run() {
   log_info "=== Phase 4, step 1: dev toolchain & daily CLI utilities ==="
 
   if [ "${TDE_DRY_RUN:-0}" = "1" ]; then
-    log_info "[dry-run] would pacman -Syu, install base-devel/git/gh/neovim/ripgrep/fd/fzf/bat/jq/lazygit/nodejs/npm/python/openssh/fastfetch, configure git, install paru-bin, and prompt for SSH keys"
+    log_info "[dry-run] would pacman -Syu, install base-devel/git/gh/neovim/ripgrep/fd/fzf/bat/jq/lazygit/nodejs/npm/python/openssh/fastfetch/tmux/android-tools, configure git, install global npm tools (serve, pm2, pnpm), install paru-bin, and prompt for SSH keys"
     return 0
   fi
 
@@ -136,6 +155,7 @@ phase4_dev_toolchain_run() {
   username="$(state_get ARCH_USERNAME)"
 
   phase4_sync_and_install_toolchain
+  phase4_install_npm_global_tools
   phase4_configure_git
   phase4_install_paru "$username" "${TDE_PARU_FROM_SOURCE:-0}" || true
   phase4_write_paru_conf
@@ -148,5 +168,13 @@ phase4_toolchain_ok() {
   username="$(state_get ARCH_USERNAME)"
   [ -n "$username" ] || return 1
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
-    sh -c 'command -v gcc >/dev/null && command -v git >/dev/null && command -v fzf >/dev/null && command -v rg >/dev/null' 2>/dev/null
+    sh -c 'command -v gcc >/dev/null && command -v git >/dev/null && command -v fzf >/dev/null && command -v rg >/dev/null && command -v tmux >/dev/null && command -v adb >/dev/null && command -v gh >/dev/null' 2>/dev/null
+}
+
+phase4_npm_tools_ok() {
+  local username
+  username="$(state_get ARCH_USERNAME)"
+  [ -n "$username" ] || return 1
+  proot-distro login "$TDE_DISTRO_NAME" --user "$username" -- \
+    sh -c 'export PATH="$HOME/.local/bin:$HOME/.npm-global/bin:$PATH"; command -v node >/dev/null && command -v npm >/dev/null && command -v serve >/dev/null && command -v pm2 >/dev/null' 2>/dev/null
 }
