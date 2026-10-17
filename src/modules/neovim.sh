@@ -23,19 +23,25 @@ _tde_nvim_headless() {
   proot-distro login "$TDE_DISTRO_NAME" --user "$username" --env TDE_SKIP_TS_ENSURE=1 -- nvim --headless "$@"
 }
 
-_tde_lazy_loaded() {
-  local loaded
-  loaded="$(_tde_nvim_headless -c "lua io.stdout:write(tostring(require('lazy').stats().loaded) .. '\n') io.stdout:flush()" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)" || true
-  if [ -z "$loaded" ]; then
-    loaded="$(_tde_nvim_headless -c "lua print(require('lazy').stats().loaded)" -c "qa" 2>&1 | grep -E '^[0-9]+$' | tail -n1)" || true
+_tde_lazy_stats() {
+  local stats
+  stats="$(_tde_nvim_headless -c "lua local s=require('lazy').stats() io.stdout:write(tostring(s.count) .. ' ' .. tostring(s.loaded) .. '\n') io.stdout:flush()" -c "qa" 2>/dev/null | grep -E '^[0-9]+ [0-9]+$' | tail -n1)" || true
+  if [ -z "$stats" ]; then
+    stats="$(_tde_nvim_headless -c "lua local s=require('lazy').stats() print(tostring(s.count) .. ' ' .. tostring(s.loaded))" -c "qa" 2>&1 | grep -E '^[0-9]+ [0-9]+$' | tail -n1)" || true
   fi
-  echo "$loaded"
+  echo "${stats:-0 0}"
+}
+
+_tde_lazy_loaded() {
+  local stats
+  stats="$(_tde_lazy_stats)"
+  echo "${stats#* }"
 }
 
 _tde_lazy_count() {
-  local count
-  count="$(_tde_nvim_headless -c "lua io.stdout:write(tostring(require('lazy').stats().count) .. '\n') io.stdout:flush()" -c "qa" 2>/dev/null | grep -E '^[0-9]+$' | tail -n1)" || true
-  echo "$count"
+  local stats
+  stats="$(_tde_lazy_stats)"
+  echo "${stats%% *}"
 }
 
 phase4_setup_npm_global() {
@@ -322,7 +328,7 @@ phase4_lazyvim_run() {
 }
 
 phase4_lazyvim_ok() {
-  local username loaded count ok=1
+  local username stats count loaded ok=1
   username="$(state_get ARCH_USERNAME)"
   [ -n "$username" ] || return 1
 
@@ -330,12 +336,13 @@ phase4_lazyvim_ok() {
     log_warn "post-check: ~/.config/nvim/lua/config/options.lua missing"
     ok=0
   fi
-  count="$(_tde_lazy_count)"
+  stats="$(_tde_lazy_stats)"
+  count="${stats%% *}"
+  loaded="${stats#* }"
   if ! { [[ "$count" =~ ^[0-9]+$ ]] && [ "$count" -ge 10 ]; }; then
     log_warn "post-check: lazy.nvim registered only ${count:-0} plugins (expected >= 10)"
     ok=0
   fi
-  loaded="$(_tde_lazy_loaded)"
   if ! { [[ "$loaded" =~ ^[0-9]+$ ]] && [ "$loaded" -gt 0 ]; }; then
     log_warn "post-check: could not read loaded plugin count from lazy.nvim"
     ok=0

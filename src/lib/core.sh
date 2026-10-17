@@ -59,8 +59,9 @@ log_init() {
 
 _log() {
   local level="$1"; shift
-  local line
-  line="[$(date '+%H:%M:%S')] [$level] $*"
+  local ts line
+  printf -v ts '%(%H:%M:%S)T' -1 2>/dev/null || ts="$(date '+%H:%M:%S')"
+  line="[$ts] [$level] $*"
   echo "$line"
   [ -n "${TDE_LOG_FILE:-}" ] && echo "$line" >> "$TDE_LOG_FILE"
 }

@@ -6,20 +6,17 @@ TDE_MODULE_TOOLCHAIN_LOADED=1
 
 phase4_sync_and_install_toolchain() {
   log_info "Syncing pacman and installing unified development toolchain & daily CLI utilities"
-  retry_with_backoff 3 15 \
-    proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm || \
-    log_fatal_code 410 "pacman -Syu failed inside $TDE_DISTRO_NAME after 3 attempts — check network/mirror connectivity."
 
   local extra_pkgs=""
   [ "${TDE_WITH_RUST:-0}" = "1" ]  && extra_pkgs="$extra_pkgs rust"
   [ "${TDE_WITH_GO:-0}" = "1" ]    && extra_pkgs="$extra_pkgs go"
   [ "${TDE_WITH_CLANG:-0}" = "1" ] && extra_pkgs="$extra_pkgs clang"
 
-  # Single consolidated pacman transaction for toolchain, editor, and daily CLI tools
+  # Single consolidated pacman transaction for sync, update, toolchain, and daily CLI tools
   # shellcheck disable=SC2086
   retry_with_backoff 3 15 \
-    proot-distro login "$TDE_DISTRO_NAME" -- pacman -S --noconfirm --needed \
-    base-devel clang git github-cli neovim tree-sitter-cli \
+    proot-distro login "$TDE_DISTRO_NAME" -- pacman -Syu --noconfirm --needed \
+    base-devel git github-cli neovim tree-sitter-cli \
     ripgrep fd fzf bat jq lazygit \
     nodejs npm python python-pip \
     openssh unzip zip tar wget curl nano fastfetch $extra_pkgs || \

@@ -121,6 +121,8 @@ phase4_nerdfonts_run() {
     if command -v termux-reload-settings >/dev/null 2>&1; then
       termux-reload-settings 2>/dev/null || true
     fi
+    _nerdfont_smoke_test >&2 || true
+    log_info "If any glyphs above appear as boxes, force-stop Termux in Android Settings and reopen it."
     return 0
   fi
 
@@ -147,6 +149,7 @@ phase4_nerdfonts_run() {
     if command -v termux-reload-settings >/dev/null 2>&1; then
       termux-reload-settings 2>/dev/null || log_warn "termux-reload-settings returned non-zero"
     fi
+    export TDE_FONT_INSTALLED_THIS_RUN=1
     log_info "Nerd Font installed and verified at ~/.termux/font.ttf"
     _nerdfont_smoke_test >&2 || true
     _nerdfont_print_forcestop_banner

@@ -56,6 +56,12 @@ export LANG="en_US.UTF-8"
 export LC_CTYPE="en_US.UTF-8"
 if [ -f "$TDE_LAUNCHER_CONFIG" ] && [ -z "\${PROOT_ACTIVE:-}" ] && [ -z "\${TDE_SKIP_LAUNCHER:-}" ]; then
   . "$TDE_LAUNCHER_CONFIG"
+  _tde_rf="\${PREFIX:-/data/data/com.termux/files/usr}/var/lib/proot-distro/installed-rootfs/\$ARCH_DISTRO_ALIAS"
+  if [ -d "\$_tde_rf/home/\$ARCH_USERNAME" ] && [ -x "\$_tde_rf/usr/bin/zsh" ]; then
+    unset _tde_rf
+    exec proot-distro login "\$ARCH_DISTRO_ALIAS" --user "\$ARCH_USERNAME" --isolated
+  fi
+  unset _tde_rf
   if command -v timeout >/dev/null 2>&1; then
     _tde_smoke() { timeout "\${TDE_LAUNCHER_SMOKE_TIMEOUT:-25}" "\$@"; }
   else

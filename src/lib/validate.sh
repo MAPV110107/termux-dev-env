@@ -114,10 +114,11 @@ phase1_check_proot_version() {
 
 phase1_check_shizuku_optional() {
   if command -v rish >/dev/null 2>&1 && rish -c true 2>/dev/null; then
-    log_info "Shizuku detected — automating battery optimization exemption"
+    log_info "Shizuku detected — automating battery and process management exemptions"
     state_set SHIZUKU_AVAILABLE 1
     _run rish -c "cmd deviceidle whitelist +com.termux" || \
-      log_warn "Shizuku present but the whitelist command failed — set battery exemption manually"
+      log_warn "Shizuku present but the battery whitelist command failed — set battery exemption manually"
+    _run rish -c "/system/bin/device_config put activity_manager max_phantom_processes 2147483647" 2>/dev/null || true
   else
     state_set SHIZUKU_AVAILABLE 0
     log_info "Shizuku not detected — set battery exemption manually: Android Settings > Apps > Termux > Battery > Unrestricted"

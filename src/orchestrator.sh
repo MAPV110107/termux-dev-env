@@ -236,11 +236,26 @@ log_info "termux-dev-env: installation complete. Commands: archhealth, archdiag,
 log_info "Note: On your first interactive 'nvim' launch, Mason will automatically install the configured LSP servers."
 
 if [ "$TDE_DRY_RUN" != "1" ] && [ -z "${TDE_NO_AUTO_RESTART:-}" ] && [ -t 0 ] && [ -t 1 ]; then
-  log_info "Entering Arch Linux ARM in 3s (Ctrl+C to stay in Termux)..."
-  sleep 3
+  if [ "${TDE_FONT_INSTALLED_THIS_RUN:-0}" = "1" ]; then
+    echo ""
+    echo "============================================================"
+    echo "[IMPORTANT] A Nerd Font was installed this session."
+    echo "Android caches the previous font in memory (mmap)."
+    echo "If icons appear as empty boxes after entering Arch:"
+    echo "  1. Type 'exit' to leave the Arch session"
+    echo "  2. Force Stop Termux: Android Settings > Apps > Termux > Force Stop"
+    echo "  3. Reopen Termux — the new font will be active"
+    echo "Or via ADB/Shizuku: adb shell am force-stop com.termux"
+    echo "============================================================"
+    echo ""
+    read -r -p "Press Enter to continue into Arch Linux ARM... "
+  else
+    log_info "Entering Arch Linux ARM in 3s (Ctrl+C to stay in Termux)..."
+    sleep 3
+  fi
   lock_release
   command -v termux-wake-unlock >/dev/null 2>&1 && termux-wake-unlock 2>/dev/null || true
-  eval "exec ${TDE_LOCK_FD}>&-"
+  [ -n "${TDE_LOCK_FD:-}" ] && eval "exec ${TDE_LOCK_FD}>&-" 2>/dev/null || true
   printf '\033c'
   exec "${SHELL:-bash}" -l
 fi

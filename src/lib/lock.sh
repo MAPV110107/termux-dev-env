@@ -37,4 +37,6 @@ lock_acquire() {
 lock_release() {
   [ -n "${TDE_LOCK_FD:-}" ] || return 0
   flock -u "$TDE_LOCK_FD" 2>/dev/null || true
+  eval "exec ${TDE_LOCK_FD}>&-" 2>/dev/null || true
+  TDE_LOCK_FD=""
 }

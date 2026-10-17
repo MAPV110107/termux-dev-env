@@ -25,8 +25,8 @@ GPG-verified rootfs · Zsh + Oh My Zsh · LazyVim + LSP · Atomic Nerd Font rend
 |:--|:--|
 | **Container OS** | Official Arch Linux ARM (`aarch64`), GPG-verified against the upstream signing keyring |
 | **Shell** | Zsh + Oh My Zsh (`agnoster`), `zsh-autosuggestions`, `fzf` keybindings, `fastfetch` login banner, strict `en_US.UTF-8` locale |
-| **Editor** | LazyVim (`neovim`) preconfigured with `mason.nvim`, `nvim-lspconfig`, `blink.cmp`, `oil.nvim`, and pre-compiled Treesitter parsers |
-| **Toolchain & CLI** | `base-devel` (`gcc`, `make`), `git`, `gh`, `nodejs`, `npm`, `python`, `ripgrep`, `fd`, `fzf`, `bat`, `jq`, `lazygit`, `openssh`, `paru-bin` |
+| **Editor** | LazyVim (`neovim`) preconfigured with `mason.nvim`, `nvim-lspconfig`, `blink.cmp`, `snacks.nvim` explorer & terminal, and pre-compiled Treesitter parsers |
+| **Toolchain & CLI** | `base-devel` (`gcc`, `make`), `git`, `gh`, `tree-sitter-cli`, `nodejs`, `npm`, `python`, `ripgrep`, `fd`, `fzf`, `bat`, `jq`, `lazygit`, `fastfetch`, `openssh`, `paru-bin` |
 | **Typography** | Atomic inode-replacing installation of `JetBrainsMono Nerd Font Mono (Regular)` validated via TTF/OTF magic bytes |
 | **Resilience** | `flock` concurrency locking, exponential network backoff, self-healing audit (`Phase 5`), and standalone `arch*` CLI utilities |
 
@@ -85,7 +85,7 @@ Grant execution permissions and start the orchestrator:
 chmod +x launcher.sh && ./launcher.sh
 ```
 
-When installation completes, the installer releases its lock, resets the terminal scrollback, and drops you directly into your new Arch Linux ARM Zsh session.
+When installation completes, the installer releases its lock, resets the terminal scrollback, and drops you directly into your new Arch Linux ARM Zsh session (pausing with force-stop guidance if a fresh font was installed).
 
 ---
 
@@ -127,10 +127,10 @@ Force a specific phase (and all subsequent dependent phases) to re-run from scra
 
 | Phase | Module | Operations & Post-Conditions |
 |:--|:--|:--|
-| **1 · Validation** | `src/lib/validate.sh` | Verifies `$PREFIX`, `aarch64`, and free disk space (`df -k`). Acquires `termux-wake-lock`. Installs host bootstrap tools (`proot-distro`, `git`, `curl`, `gnupg`). Configures battery whitelist automatically if Shizuku (`rish`) is active. |
+| **1 · Validation** | `src/lib/validate.sh` | Verifies `$PREFIX`, `aarch64`, and free disk space (`df -k`). Acquires `termux-wake-lock`. Installs host bootstrap tools (`proot-distro`, `git`, `curl`, `gnupg`). Configures battery whitelist and disables phantom process limits automatically if Shizuku (`rish`) is active. |
 | **2 · Diagnostics** | `src/lib/validate.sh` | Records RAM, free storage, CPU cores, filesystem type, zram, and Android SDK level to `~/.config/termux-dev-env/diagnostics.env`. Verifies `proot` execution against kernel `ptrace` restrictions. |
-| **3 · Core Container** | `src/modules/rootfs.sh`<br>`src/modules/user.sh`<br>`src/modules/launcher.sh` | Downloads the Arch Linux ARM tarball (`https` first, `http` fallback) and verifies its GPG signature. Configures `DisableSandbox`, `ParallelDownloads = 10`, and `IgnorePkg = linux-aarch64`. Creates a non-root user in `wheel` with `visudo -c` validated passwordless `sudo`. Configures Termux `extra-keys` and `.bashrc`/`.zshrc` auto-login hooks with a 25s smoke-test guard. |
-| **4 · Workstation** | `src/modules/toolchain.sh`<br>`src/modules/nerdfonts.sh`<br>`src/modules/shell.sh`<br>`src/modules/neovim.sh` | Installs compilers, CLI utilities, and Neovim in a single `pacman` transaction. Configures Git globals and `paru-bin`. Installs `JetBrainsMonoNerdFontMono-Regular.ttf` with atomic inode replacement. Generates `en_US.UTF-8` locale and configures Oh My Zsh + LazyVim + Treesitter. |
+| **3 · Core Container** | `src/modules/rootfs.sh`<br>`src/modules/user.sh`<br>`src/modules/launcher.sh` | Downloads the Arch Linux ARM tarball (`https` first, `http` fallback) and verifies its GPG signature. Configures `DisableSandbox`, `ParallelDownloads = 10`, `IgnorePkg = linux-aarch64`, and HTTPS-prioritized mirrorlist. Creates a non-root user in `wheel` with `visudo -c` validated passwordless `sudo`. Configures Termux `extra-keys` and `.bashrc`/`.zshrc` fast-path auto-login hooks with a 25s smoke-test guard. |
+| **4 · Workstation** | `src/modules/toolchain.sh`<br>`src/modules/nerdfonts.sh`<br>`src/modules/shell.sh`<br>`src/modules/neovim.sh` | Installs compilers, CLI utilities, and Neovim in a single consolidated `pacman` transaction. Configures Git globals and `paru-bin`. Installs `JetBrainsMonoNerdFontMono-Regular.ttf` with atomic inode replacement. Generates `en_US.UTF-8` locale and configures Oh My Zsh + LazyVim + Treesitter. |
 | **5 · Audit & Heal** | `src/lib/audit.sh` | Runs functional post-condition checks across all critical and visual components. Automatically retries recoverable warnings, cleans verified download caches, and writes a timestamped report to `~/.config/termux-dev-env/logs/`. |
 | **6 · Maintenance** | `src/modules/maintenance.sh` | Syncs runtime libraries to `$PREFIX/share/termux-dev-env` and deploys standalone `arch*` management commands into `$PREFIX/bin`. |
 
@@ -147,7 +147,7 @@ LazyVim is preconfigured with `have_nerd_font = true`, `termguicolors = true`, `
 | **Bash / Shell** | `bashls` (`bash-language-server`) | Default (via Mason) |
 | **Markdown** | `marksman` | Default (via Mason) |
 | **Python** | `pyright` | Default (via Mason) |
-| **TypeScript / JS** | `ts_ls`, `vtsls` | Default (via Mason) |
+| **TypeScript / JS** | `ts_ls` | Default (via Mason; `vtsls` disabled) |
 | **HTML / CSS** | `html`, `cssls` | Default (via Mason) |
 | **Rust** | `rust_analyzer` | Automatic when `--with-rust` is passed or `rustc` is present |
 | **C / C++** | `clangd` | Automatic when `--with-clang` is passed or `clang` is present |
@@ -166,7 +166,7 @@ LazyVim is preconfigured with `have_nerd_font = true`, `termguicolors = true`, `
 | `<leader>ca` | Normal / Visual | Trigger code actions |
 | `<leader>cd` | Normal | Inspect line diagnostics |
 | `<leader>lc` | Normal | Save buffer and run `tsc --noEmit %` type-check on demand |
-| `-` | Normal | Open parent directory in `oil.nvim` buffer editor |
+| `<leader>e` | Normal | Toggle Snacks file explorer sidebar |
 | `Ctrl + /` | Normal / Terminal | Toggle floating/split Zsh terminal inside Neovim |
 
 ---

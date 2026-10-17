@@ -130,7 +130,8 @@ phase3_disable_pacman_sandbox() {
 phase3_write_pacman_mirrorlist() {
   local mirror mirrorlist_body=""
   for mirror in "${TDE_ARM_MIRRORS[@]}"; do
-    mirrorlist_body="${mirrorlist_body}Server = http://${mirror}/\$arch/\$repo
+    mirrorlist_body="${mirrorlist_body}Server = https://${mirror}/\$arch/\$repo
+Server = http://${mirror}/\$arch/\$repo
 "
   done
   proot-distro login "$TDE_DISTRO_NAME" -- sh -c "cat > /etc/pacman.d/mirrorlist << 'MIRROREOF'
@@ -138,7 +139,7 @@ ${mirrorlist_body}MIRROREOF" >>"$TDE_LOG_FILE" 2>&1 || {
     log_warn "Could not write multi-mirror pacman mirrorlist — keeping default mirror"
     return 0
   }
-  log_info "pacman mirrorlist configured with ${#TDE_ARM_MIRRORS[@]} mirrors"
+  log_info "pacman mirrorlist configured with ${#TDE_ARM_MIRRORS[@]} mirrors (HTTPS prioritized)"
 }
 
 phase3_rootfs_ok() {
